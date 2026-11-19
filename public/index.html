@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GhostMail Core — Real-Time Disposable Gmail & OTP Stream Hub</title>
+  <meta name="description" content="Servidor y generador de correos temporales reales de Gmail con recepción de códigos de verificación OTP en tiempo real por IMAP.">
+  
+  <!-- Google Fonts & FontAwesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Ambient Glow Background -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-logo">
+          <i class="fa-solid fa-ghost"></i>
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-title">GHOSTMAIL <span class="badge-core">CORE</span></h1>
+          <p class="brand-subtitle">Real-time Disposable Gmail & OTP Stream Engine</p>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <div class="status-indicator" title="Conexión IMAP Activa">
+          <span class="pulse-dot"></span>
+          <span class="status-text" id="imapStatusText">IMAP: ESCUCHANDO</span>
+        </div>
+
+        <div class="stats-pill" id="poolStatsPill" title="Cuentas activas en el pool">
+          <i class="fa-solid fa-server"></i>
+          <span id="statsAccountCount">1 Cuenta</span>
+          <span class="sep">•</span>
+          <span id="statsComboCount">16,384+ Alias</span>
+        </div>
+
+        <button class="icon-toggle-btn" id="audioToggle" title="Sonido al recibir correo">
+          <i class="fa-solid fa-volume-high" id="audioIcon"></i>
+        </button>
+
+        <button class="clear-inbox-btn" id="clearInboxBtn" title="Vaciar bandeja de entrada">
+          <i class="fa-regular fa-trash-can"></i>
+          <span>Limpiar</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="main-layout">
+    
+    <!-- Hero / Generator Section -->
+    <section class="generator-card">
+      <div class="generator-header">
+        <div class="mode-selector" role="tablist">
+          <button class="mode-pill active" data-mode="dots">
+            <i class="fa-solid fa-ellipsis"></i>
+            <span>Puntos Gmail (.)</span>
+          </button>
+          <button class="mode-pill" data-mode="googlemail">
+            <i class="fa-brands fa-google"></i>
+            <span>Googlemail (.com)</span>
+          </button>
+          <button class="mode-pill" data-mode="plus">
+            <i class="fa-solid fa-plus"></i>
+            <span>Etiqueta Plus (+)</span>
+          </button>
+        </div>
+
+        <span class="pool-tag">GMAIL OFICIAL // 100% COMPATIBLE</span>
+      </div>
+
+      <div class="address-display-box">
+        <div class="address-prefix-label">TU CORREO TEMPORAL ACTIVO:</div>
+        <div class="address-value-row">
+          <span class="address-text" id="currentEmailDisplay">Generando...</span>
+          <div class="address-actions">
+            <button class="btn-copy-main" id="btnCopyEmail" title="Copiar al portapapeles">
+              <i class="fa-regular fa-copy"></i>
+              <span id="copyBtnText">COPIAR</span>
+            </button>
+            <button class="btn-refresh-main" id="btnGenerateNew" title="Generar otro alias diferente">
+              <i class="fa-solid fa-arrows-rotate" id="refreshIcon"></i>
+              <span>NUEVO</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="generator-footer">
+        <div class="instruction-tip">
+          <i class="fa-solid fa-lightbulb"></i>
+          <span>Usa este correo para registrarte en cualquier plataforma. En cuanto te envíen el código OTP o enlace de confirmación, <strong>aparecerá abajo automáticamente en menos de 3 segundos</strong> sin recargar.</span>
+        </div>
+        <div class="active-base-info" id="activeBaseInfo">
+          Base: <span id="baseAccountDisplay">cargando...</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Real-Time Stream Section -->
+    <section class="inbox-section">
+      <div class="inbox-header-bar">
+        <div class="inbox-title-group">
+          <h2 class="inbox-title">
+            <i class="fa-regular fa-envelope-open"></i>
+            Bandeja de Entrada en Tiempo Real
+          </h2>
+          <span class="message-counter-badge" id="messageCountBadge">0 mensajes</span>
+        </div>
+
+        <div class="inbox-filter-controls">
+          <label class="filter-toggle">
+            <input type="checkbox" id="filterCurrentOnly" checked>
+            <span>Mostrar solo del correo actual</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Live Messages Feed -->
+      <div class="messages-container" id="messagesFeed">
+        <!-- Empty State Default -->
+        <div class="empty-inbox-state" id="emptyState">
+          <div class="radar-circle">
+            <i class="fa-solid fa-satellite-dish"></i>
+          </div>
+          <h3 class="empty-title">Esperando mensajes entrantes...</h3>
+          <p class="empty-desc">
+            Pega el correo de arriba en la web donde te estás registrando y presiona enviar código.<br>
+            El mensaje y el código OTP aparecerán aquí de forma instantánea vía WebSocket.
+          </p>
+          <div class="empty-tags">
+            <span><i class="fa-solid fa-bolt"></i> Detección automática de OTP</span>
+            <span><i class="fa-solid fa-link"></i> Enlaces de activación directa</span>
+            <span><i class="fa-solid fa-shield-halved"></i> 100% Cuentas Oficiales</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Message Detail Modal -->
+  <div class="modal-overlay" id="messageModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-meta">
+          <span class="modal-from" id="modalFrom"></span>
+          <span class="modal-date" id="modalDate"></span>
+        </div>
+        <button class="modal-close-btn" id="modalCloseBtn">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <h3 class="modal-subject" id="modalSubject"></h3>
+      <div class="modal-to-pill" id="modalTo"></div>
+
+      <!-- OTP Banner in Modal if exists -->
+      <div class="modal-otp-card" id="modalOtpCard" style="display: none;">
+        <span class="otp-card-label">CÓDIGO DE VERIFICACIÓN DETECTADO</span>
+        <div class="otp-card-row">
+          <span class="otp-huge-number" id="modalOtpValue">------</span>
+          <button class="btn-copy-otp" id="modalBtnCopyOtp">
+            <i class="fa-regular fa-copy"></i>
+            <span>Copiar Código</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body-content" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Socket.io & App Script -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
