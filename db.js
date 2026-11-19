@@ -3,6 +3,7 @@
  */
 import Database from 'better-sqlite3';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -10,12 +11,19 @@ const DB_PATH = path.join(__dirname, 'ghostmail.db');
 
 const db = new Database(DB_PATH);
 
-// WAL mode para mejor rendimiento concurrente
+// WAL mode para óptima concurrencia
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 // ─── Esquema ────────────────────────────────────────────────────────────────
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS aliases (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     email       TEXT    NOT NULL UNIQUE,
@@ -23,9 +31,11 @@ db.exec(`
     provider    TEXT    NOT NULL DEFAULT 'gmail',
     mode        TEXT    NOT NULL DEFAULT 'dots',
     session_id  TEXT    NOT NULL,
+    user_id     INTEGER DEFAULT NULL,
     assigned_at TEXT    NOT NULL,
     deleted_at  TEXT    DEFAULT NULL,
-    status      TEXT    NOT NULL DEFAULT 'active'
+    status      TEXT    NOT NULL DEFAULT 'active',
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS messages (
@@ -48,23 +58,77 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_alias  ON messages(alias_email);
 `);
 
-// ─── Aliases ─────────────────────────────────────────────────────────────────
+// Migración segura si la tabla aliases ya existía sin columna user_id
+try {
+  const tableInfo = db.prepare(`PRAGMA table_info(aliases)`).all();
+  const hasUserId = tableInfo.some(col => col.name === 'user_id');
+  if (!hasUserId) {
+    db.exec(`ALTER TABLE aliases ADD COLUMN user_id INTEGER DEFAULT NULL;`);
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_aliases_user ON aliases(user_id);`);
+} catch (e) {
+  // Ignorar si ya existe
+}
 
-export function assignAlias({ email, baseAccount, provider, mode, sessionId }) {
+// ─── Autenticación (Crypto Nativo) ──────────────────────────────────────────
+export function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password, storedHash) {
+  const [salt, key] = storedHash.split(':');
+  if (!salt || !key) return false;
+  const keyBuffer = Buffer.from(key, 'hex');
+  const derivedKey = crypto.scryptSync(password, salt, 64);
+  return crypto.timingSafeEqual(keyBuffer, derivedKey);
+}
+
+export function createUser(username, password) {
+  const cleanUsername = username.trim().toLowerCase();
+  const passwordHash = hashPassword(password);
+  const stmt = db.prepare(`INSERT INTO users (username, password_hash) VALUES (?, ?)`);
+  const result = stmt.run(cleanUsername, passwordHash);
+  return { id: result.lastInsertRowid, username: cleanUsername };
+}
+
+export function getUserByUsername(username) {
+  const clean = username.trim().toLowerCase();
+  return db.prepare(`SELECT * FROM users WHERE username = ?`).get(clean);
+}
+
+export function getUserById(id) {
+  return db.prepare(`SELECT id, username, created_at FROM users WHERE id = ?`).get(id);
+}
+
+// ─── Conteo de Aliases Activos (Límites: 5 invitado / 10 usuario) ─────────────
+export function countActiveAliases(sessionId, userId = null) {
+  if (userId) {
+    const row = db.prepare(`SELECT COUNT(*) as count FROM aliases WHERE user_id = ? AND status = 'active'`).get(userId);
+    return row ? row.count : 0;
+  }
+  const row = db.prepare(`SELECT COUNT(*) as count FROM aliases WHERE session_id = ? AND status = 'active' AND user_id IS NULL`).get(sessionId);
+  return row ? row.count : 0;
+}
+
+// ─── Aliases ─────────────────────────────────────────────────────────────────
+export function assignAlias({ email, baseAccount, provider, mode, sessionId, userId = null }) {
   const cleanEmail = email.toLowerCase().trim();
   const stmt = db.prepare(`
-    INSERT INTO aliases (email, base_account, provider, mode, session_id, assigned_at, status)
-    VALUES (?, ?, ?, ?, ?, datetime('now'), 'active')
+    INSERT INTO aliases (email, base_account, provider, mode, session_id, user_id, assigned_at, status)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'active')
     ON CONFLICT(email) DO UPDATE SET
       base_account = excluded.base_account,
       provider = excluded.provider,
       mode = excluded.mode,
       session_id = excluded.session_id,
+      user_id = excluded.user_id,
       assigned_at = datetime('now'),
       deleted_at = NULL,
       status = 'active'
   `);
-  const result = stmt.run(cleanEmail, baseAccount, provider, mode, sessionId);
+  const result = stmt.run(cleanEmail, baseAccount, provider, mode, sessionId, userId);
   return result.changes > 0;
 }
 
@@ -74,23 +138,40 @@ export function isAliasAvailable(email) {
   return !row;
 }
 
-export function getAliasesBySession(sessionId) {
+export function getAliasesForSessionOrUser(sessionId, userId = null) {
+  if (userId) {
+    return db.prepare(`
+      SELECT id, email, base_account, provider, mode, assigned_at, status,
+        (SELECT COUNT(*) FROM messages m WHERE LOWER(m.alias_email) = LOWER(aliases.email) AND m.deleted_at IS NULL) as message_count
+      FROM aliases
+      WHERE user_id = ? AND status = 'active'
+      ORDER BY id DESC
+    `).all(userId);
+  }
   return db.prepare(`
     SELECT id, email, base_account, provider, mode, assigned_at, status,
       (SELECT COUNT(*) FROM messages m WHERE LOWER(m.alias_email) = LOWER(aliases.email) AND m.deleted_at IS NULL) as message_count
     FROM aliases
-    WHERE session_id = ? AND status = 'active'
+    WHERE session_id = ? AND status = 'active' AND user_id IS NULL
     ORDER BY id DESC
   `).all(sessionId);
 }
 
-export function getAllActiveAliasEmails() {
-  return db.prepare(`SELECT email FROM aliases WHERE status = 'active'`).all().map(r => r.email.toLowerCase());
+// Vincular aliases anónimos de la sesión actual al usuario tras iniciar sesión
+export function claimSessionAliasesForUser(sessionId, userId) {
+  return db.prepare(`
+    UPDATE aliases SET user_id = ? WHERE session_id = ? AND user_id IS NULL AND status = 'active'
+  `).run(userId, sessionId);
 }
 
-export function deleteAlias(email, sessionId) {
+export function deleteAlias(email, sessionId, userId = null) {
   const cleanEmail = email.toLowerCase().trim();
-  const alias = db.prepare(`SELECT id FROM aliases WHERE LOWER(email) = ? AND session_id = ? AND status = 'active'`).get(cleanEmail, sessionId);
+  let alias = null;
+  if (userId) {
+    alias = db.prepare(`SELECT id FROM aliases WHERE LOWER(email) = ? AND user_id = ? AND status = 'active'`).get(cleanEmail, userId);
+  } else {
+    alias = db.prepare(`SELECT id FROM aliases WHERE LOWER(email) = ? AND session_id = ? AND status = 'active'`).get(cleanEmail, sessionId);
+  }
   if (!alias) return false;
 
   db.prepare(`UPDATE aliases SET status = 'deleted', deleted_at = datetime('now') WHERE LOWER(email) = ?`).run(cleanEmail);
@@ -99,18 +180,15 @@ export function deleteAlias(email, sessionId) {
 }
 
 // ─── Messages ────────────────────────────────────────────────────────────────
-
 export function saveMessage({ aliasEmail, uid, fromAddr, subject, dateReceived, html, textBody, otp, actionUrl }) {
   const cleanAlias = (aliasEmail || '').toLowerCase().trim();
   if (!cleanAlias) return null;
 
-  // Evitar duplicados por uid + alias
   if (uid) {
     const exists = db.prepare(`SELECT id FROM messages WHERE LOWER(alias_email) = ? AND uid = ? AND deleted_at IS NULL`).get(cleanAlias, uid);
     if (exists) return null;
   }
 
-  // Prevenir duplicados basados en remitente + asunto recibidos muy recientemente
   const recentDuplicate = db.prepare(`
     SELECT id FROM messages 
     WHERE LOWER(alias_email) = ? AND from_addr = ? AND subject = ? AND deleted_at IS NULL
@@ -154,12 +232,21 @@ export function getMessageFull(id) {
   return db.prepare(`SELECT * FROM messages WHERE id = ? AND deleted_at IS NULL`).get(id);
 }
 
-export function deleteMessage(id, sessionId) {
-  const msg = db.prepare(`
-    SELECT m.id FROM messages m
-    JOIN aliases a ON LOWER(a.email) = LOWER(m.alias_email)
-    WHERE m.id = ? AND a.session_id = ? AND m.deleted_at IS NULL
-  `).get(id, sessionId);
+export function deleteMessage(id, sessionId, userId = null) {
+  let msg = null;
+  if (userId) {
+    msg = db.prepare(`
+      SELECT m.id FROM messages m
+      JOIN aliases a ON LOWER(a.email) = LOWER(m.alias_email)
+      WHERE m.id = ? AND a.user_id = ? AND m.deleted_at IS NULL
+    `).get(id, userId);
+  } else {
+    msg = db.prepare(`
+      SELECT m.id FROM messages m
+      JOIN aliases a ON LOWER(a.email) = LOWER(m.alias_email)
+      WHERE m.id = ? AND a.session_id = ? AND m.deleted_at IS NULL
+    `).get(id, sessionId);
+  }
   if (!msg) return false;
 
   db.prepare(`UPDATE messages SET deleted_at = datetime('now') WHERE id = ?`).run(id);

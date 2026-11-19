@@ -5,26 +5,65 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GhostMail Core</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <link rel="stylesheet" href="style.css" />
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
-<body>
+<body data-theme="dark" data-color="emerald">
 
 <!-- ══════════════ HEADER ══════════════ -->
 <header class="header">
   <div class="header-container">
     <div class="logo-block">
       <div class="logo-icon"><i class="fa-solid fa-ghost"></i></div>
-      <div>
+      <div class="logo-text-group">
         <h1 class="logo-title">GhostMail<span class="logo-accent"> Core</span></h1>
-        <p class="logo-sub">Correo temporal · Tiempo real · Sin registro</p>
       </div>
     </div>
+
     <div class="header-actions">
+      <!-- Selector de Idioma -->
+      <button class="btn-header-pill" id="langToggle" title="Cambiar idioma / Change language">
+        <i class="fa-solid fa-globe"></i>
+        <span id="langLabel">EN</span>
+      </button>
+
+      <!-- Selector de Tema (Modo Claro / Oscuro) -->
+      <button class="btn-icon" id="themeToggle" title="Alternar modo claro / oscuro">
+        <i class="fa-solid fa-sun" id="themeIcon"></i>
+      </button>
+
+      <!-- Paleta de Colores de Acento -->
+      <div class="palette-dropdown-wrap">
+        <button class="btn-icon" id="paletteToggle" title="Elegir color de acento">
+          <span class="palette-swatch-preview"></span>
+        </button>
+        <div class="palette-popover" id="paletteMenu">
+          <div class="palette-title" data-i18n="accent_color">Color de acento</div>
+          <div class="palette-options">
+            <button class="palette-btn" data-palette="emerald" title="Esmeralda"></button>
+            <button class="palette-btn" data-palette="blue" title="Azul (Facebook)"></button>
+            <button class="palette-btn" data-palette="orange" title="Naranja"></button>
+            <button class="palette-btn" data-palette="purple" title="Púrpura"></button>
+            <button class="palette-btn" data-palette="rose" title="Rojo Carmesí"></button>
+            <button class="palette-btn" data-palette="cyan" title="Cian Neón"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sonido -->
       <button class="btn-icon" id="audioToggle" title="Sonido">
         <i class="fa-solid fa-volume-high" id="audioIcon"></i>
       </button>
+
+      <!-- Botón de Usuario / Login -->
+      <button class="btn-header-auth" id="authBtn">
+        <i class="fa-regular fa-circle-user"></i>
+        <span id="authBtnText" data-i18n="login">Ingresar</span>
+      </button>
+
+      <!-- GitHub -->
       <a href="https://github.com/maykelcb/ghostmail-core" target="_blank" class="btn-icon" title="GitHub">
         <i class="fa-brands fa-github"></i>
       </a>
@@ -38,39 +77,39 @@
   <!-- ── SIDEBAR: Historial ── -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <span><i class="fa-solid fa-clock-rotate-left"></i> Historial</span>
-      <span class="alias-count-badge" id="aliasCountBadge">0</span>
+      <div class="sidebar-title">
+        <i class="fa-solid fa-clock-rotate-left"></i>
+        <span data-i18n="history">Historial</span>
+      </div>
+      <span class="alias-count-badge" id="aliasCountBadge">0/5</span>
     </div>
+
+    <!-- Botón Crear Nuevo inmediatamente arriba para máxima visibilidad -->
+    <button class="btn-create-new" id="btnCreateNew">
+      <i class="fa-solid fa-plus"></i>
+      <span data-i18n="create_new">Crear nuevo correo</span>
+    </button>
+
     <div class="sidebar-list" id="aliasList">
       <div class="sidebar-empty">
         <i class="fa-solid fa-inbox"></i>
-        <p>Sin alias generados</p>
+        <p data-i18n="no_aliases">Sin correos activos</p>
       </div>
     </div>
-    <button class="btn-create-new" id="btnCreateNew">
-      <i class="fa-solid fa-plus"></i>
-      Crear nuevo correo
-    </button>
   </aside>
 
   <!-- ── MAIN ── -->
   <main class="main-panel">
 
-    <!-- Pantalla de bienvenida (cuando no hay alias activo) -->
+    <!-- Pantalla de bienvenida limpia -->
     <div class="welcome-screen" id="welcomeScreen">
       <div class="welcome-icon"><i class="fa-solid fa-ghost"></i></div>
-      <h2 class="welcome-title">Bienvenido a GhostMail</h2>
-      <p class="welcome-desc">Genera un correo temporal al instante. Sin registro, sin límites, sin rastreo.</p>
+      <h2 class="welcome-title" data-i18n="welcome_title">Bienvenido a GhostMail</h2>
+      <p class="welcome-desc" data-i18n="welcome_desc">Genera tu correo temporal al instante.</p>
       <button class="btn-create-big" id="btnCreateBig">
         <i class="fa-solid fa-wand-magic-sparkles"></i>
-        Crear mi primer correo
+        <span data-i18n="create_first">Crear mi primer correo</span>
       </button>
-      <div class="welcome-features">
-        <div class="feature-chip"><i class="fa-solid fa-bolt"></i> Tiempo real</div>
-        <div class="feature-chip"><i class="fa-solid fa-key"></i> OTP automático</div>
-        <div class="feature-chip"><i class="fa-solid fa-shield-halved"></i> Privado</div>
-        <div class="feature-chip"><i class="fa-solid fa-infinity"></i> Ilimitado</div>
-      </div>
     </div>
 
     <!-- Vista del alias activo + bandeja -->
@@ -85,18 +124,21 @@
           <div class="alias-card-actions">
             <button class="btn-delete-alias" id="btnDeleteAlias" title="Eliminar este correo">
               <i class="fa-solid fa-trash"></i>
+              <span data-i18n="delete">Eliminar</span>
             </button>
           </div>
         </div>
+
         <div class="alias-email-display" id="aliasEmailDisplay">—</div>
+
         <div class="alias-card-bottom">
           <button class="btn-copy-alias" id="btnCopyAlias">
             <i class="fa-regular fa-copy"></i>
-            <span id="copyBtnText">COPIAR</span>
+            <span id="copyBtnText" data-i18n="copy">COPIAR</span>
           </button>
           <div class="alias-live-indicator">
             <span class="live-dot"></span>
-            <span>En vivo</span>
+            <span data-i18n="live">En vivo</span>
           </div>
         </div>
       </div>
@@ -106,7 +148,7 @@
         <div class="inbox-header">
           <div class="inbox-title">
             <i class="fa-solid fa-inbox"></i>
-            <span>Bandeja de entrada</span>
+            <span data-i18n="inbox">Bandeja de entrada</span>
             <span class="msg-count-badge" id="messageCountBadge">0</span>
           </div>
         </div>
@@ -115,8 +157,8 @@
 
         <div class="empty-inbox" id="emptyState">
           <i class="fa-solid fa-envelope-open-text"></i>
-          <p>Esperando correos...</p>
-          <small>Usa este alias para registrarte en cualquier servicio</small>
+          <p data-i18n="waiting_emails">Esperando correos...</p>
+          <small data-i18n="waiting_desc">Usa este correo para registrarte en cualquier plataforma</small>
         </div>
       </div>
     </div>
@@ -129,8 +171,14 @@
   <div class="modal-box">
     <button class="modal-close" id="modalClose"><i class="fa-solid fa-xmark"></i></button>
     <div class="modal-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-    <h2 class="modal-title">Crear correo temporal</h2>
-    <p class="modal-sub">Elige el proveedor y el estilo de tu alias</p>
+    <h2 class="modal-title" data-i18n="create_modal_title">Crear correo temporal</h2>
+    <p class="modal-sub" data-i18n="create_modal_sub">Selecciona el proveedor para tu alias aleatorio</p>
+
+    <!-- Banner de límite informativo -->
+    <div class="modal-limit-info" id="modalLimitInfo">
+      <i class="fa-solid fa-circle-info"></i>
+      <span id="modalLimitText">Límite: 5 correos simultáneos para invitados (10 para usuarios logueados).</span>
+    </div>
 
     <div class="provider-grid">
       <label class="provider-card" data-mode="dots">
@@ -159,10 +207,55 @@
       </label>
     </div>
 
+    <!-- Contenedor Cloudflare Turnstile -->
+    <div id="turnstileCreateContainer" class="turnstile-container"></div>
+
     <button class="btn-generate-modal" id="btnGenerateModal">
       <i class="fa-solid fa-bolt"></i>
-      Generar alias aleatorio
+      <span data-i18n="btn_generate">Generar correo</span>
     </button>
+  </div>
+</div>
+
+<!-- ══════════════ MODAL: AUTENTICACIÓN (LOGIN / REGISTRO) ══════════════ -->
+<div class="modal-overlay" id="authModal">
+  <div class="modal-box auth-modal-box">
+    <button class="modal-close" id="authModalClose"><i class="fa-solid fa-xmark"></i></button>
+
+    <div class="auth-tabs">
+      <button class="auth-tab-btn active" id="tabLoginBtn" data-i18n="tab_login">Iniciar Sesión</button>
+      <button class="auth-tab-btn" id="tabRegisterBtn" data-i18n="tab_register">Registrarse</button>
+    </div>
+
+    <div class="auth-perk-badge">
+      <i class="fa-solid fa-shield-halved"></i>
+      <span data-i18n="auth_perk">Accede a 10 correos simultáneos y guarda tu historial</span>
+    </div>
+
+    <form id="authForm" class="auth-form" onsubmit="return false;">
+      <div class="input-group">
+        <label for="authUsername" data-i18n="username">Usuario</label>
+        <div class="input-wrapper">
+          <i class="fa-regular fa-user"></i>
+          <input type="text" id="authUsername" required autocomplete="username" placeholder="ej. usuario123" />
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label for="authPassword" data-i18n="password">Contraseña</label>
+        <div class="input-wrapper">
+          <i class="fa-solid fa-lock"></i>
+          <input type="password" id="authPassword" required autocomplete="current-password" placeholder="••••••••" />
+        </div>
+      </div>
+
+      <!-- Cloudflare Turnstile Widget -->
+      <div id="turnstileAuthContainer" class="turnstile-container"></div>
+
+      <button type="submit" class="btn-auth-submit" id="authSubmitBtn">
+        <span id="authSubmitText" data-i18n="login">Ingresar</span>
+      </button>
+    </form>
   </div>
 </div>
 
@@ -170,11 +263,11 @@
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-box modal-box-sm">
     <div class="confirm-icon danger"><i class="fa-solid fa-triangle-exclamation"></i></div>
-    <h2 class="modal-title" id="confirmTitle">¿Eliminar?</h2>
-    <p class="modal-sub" id="confirmDesc">Esta acción no se puede deshacer.</p>
+    <h2 class="modal-title" id="confirmTitle" data-i18n="confirm_title">¿Eliminar?</h2>
+    <p class="modal-sub" id="confirmDesc" data-i18n="confirm_desc">Esta acción no se puede deshacer.</p>
     <div class="confirm-actions">
-      <button class="btn-cancel" id="confirmCancel">Cancelar</button>
-      <button class="btn-danger-confirm" id="confirmOk">Eliminar</button>
+      <button class="btn-cancel" id="confirmCancel" data-i18n="cancel">Cancelar</button>
+      <button class="btn-danger-confirm" id="confirmOk" data-i18n="confirm_delete">Eliminar</button>
     </div>
   </div>
 </div>

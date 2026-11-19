@@ -2,6 +2,111 @@
  * GhostMail Core v2 — Frontend Controller & WebSocket Client
  */
 
+// ─── Diccionario de Traducciones (ES / EN) ──────────────────────────────────
+const translations = {
+  es: {
+    accent_color: "Color de acento",
+    login: "Ingresar",
+    logout: "Cerrar sesión",
+    history: "Historial",
+    create_new: "Crear nuevo correo",
+    no_aliases: "Sin correos activos",
+    welcome_title: "Bienvenido a GhostMail",
+    welcome_desc: "Genera tu correo temporal al instante.",
+    create_first: "Crear mi primer correo",
+    delete: "Eliminar",
+    copy: "COPIAR",
+    copied: "¡COPIADO!",
+    live: "En vivo",
+    inbox: "Bandeja de entrada",
+    waiting_emails: "Esperando correos...",
+    waiting_desc: "Usa este correo para registrarte en cualquier plataforma",
+    create_modal_title: "Crear correo temporal",
+    create_modal_sub: "Selecciona el proveedor para tu alias aleatorio",
+    btn_generate: "Generar correo",
+    tab_login: "Iniciar Sesión",
+    tab_register: "Registrarse",
+    auth_perk: "Accede a 10 correos simultáneos y guarda tu historial",
+    username: "Usuario",
+    password: "Contraseña",
+    confirm_title: "¿Eliminar?",
+    confirm_desc: "Esta acción no se puede deshacer.",
+    cancel: "Cancelar",
+    confirm_delete: "Eliminar",
+    limit_guest: "Límite: 5 correos simultáneos para invitados (10 para usuarios logueados).",
+    limit_user: "Límite: 10 correos simultáneos para tu cuenta.",
+    full_email_open: "Ver correo completo",
+    full_email_close: "Ocultar correo completo",
+    detected_code: "CÓDIGO DETECTADO:",
+    confirm_action_link: "Confirmar / Abrir Enlace",
+    delete_msg_prompt: "¿Eliminar este mensaje? Esta acción no se puede deshacer y se borrará permanentemente.",
+    delete_alias_prompt: "Se borrará este correo temporal y todos sus mensajes recibidos. No se podrá recuperar.",
+    limit_reached_guest: "Has alcanzado el límite de 5 correos simultáneos. Elimina alguno o inicia sesión para tener hasta 10.",
+    limit_reached_user: "Has alcanzado el límite máximo de 10 correos simultáneos. Elimina alguno para crear uno nuevo."
+  },
+  en: {
+    accent_color: "Accent color",
+    login: "Log In",
+    logout: "Log Out",
+    history: "History",
+    create_new: "Create new email",
+    no_aliases: "No active emails",
+    welcome_title: "Welcome to GhostMail",
+    welcome_desc: "Generate your disposable email instantly.",
+    create_first: "Create my first email",
+    delete: "Delete",
+    copy: "COPY",
+    copied: "COPIED!",
+    live: "Live",
+    inbox: "Inbox",
+    waiting_emails: "Waiting for emails...",
+    waiting_desc: "Use this email to sign up on any platform",
+    create_modal_title: "Create disposable email",
+    create_modal_sub: "Select provider for your random alias",
+    btn_generate: "Generate email",
+    tab_login: "Log In",
+    tab_register: "Sign Up",
+    auth_perk: "Get up to 10 simultaneous emails and save your history",
+    username: "Username",
+    password: "Password",
+    confirm_title: "Delete?",
+    confirm_desc: "This action cannot be undone.",
+    cancel: "Cancel",
+    confirm_delete: "Delete",
+    limit_guest: "Limit: 5 simultaneous emails for guests (10 for registered users).",
+    limit_user: "Limit: 10 simultaneous emails for your account.",
+    full_email_open: "View full email",
+    full_email_close: "Hide full email",
+    detected_code: "DETECTED CODE:",
+    confirm_action_link: "Confirm / Open Link",
+    delete_msg_prompt: "Delete this message? This action cannot be undone and will be permanently deleted.",
+    delete_alias_prompt: "This disposable email and all received messages will be permanently deleted.",
+    limit_reached_guest: "You have reached the 5 simultaneous emails limit. Delete one or log in to get up to 10.",
+    limit_reached_user: "You have reached the 10 simultaneous emails limit. Delete one to create a new one."
+  }
+};
+
+let currentLang = localStorage.getItem('ghost_lang') || 'es';
+
+function t(key) {
+  return translations[currentLang]?.[key] || translations['es']?.[key] || key;
+}
+
+function applyLanguage(lang) {
+  currentLang = lang;
+  localStorage.setItem('ghost_lang', lang);
+  document.getElementById('langLabel').textContent = lang === 'es' ? 'EN' : 'ES';
+
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (translations[lang]?.[key]) {
+      el.textContent = translations[lang][key];
+    }
+  });
+
+  updateLimitInfoText();
+}
+
 // ─── Web Audio API Chime ─────────────────────────────
 class GhostAudio {
   constructor() {
@@ -49,6 +154,13 @@ let messages = [];
 let socket = null;
 let pendingConfirmCallback = null;
 
+let currentUser = null;
+let maxLimit = 5;
+let turnstileSiteKey = '';
+let turnstileAuthWidgetId = null;
+let turnstileCreateWidgetId = null;
+let currentAuthTab = 'login'; // 'login' | 'register'
+
 // DOM Elements
 const welcomeScreen       = document.getElementById('welcomeScreen');
 const aliasView           = document.getElementById('aliasView');
@@ -69,6 +181,19 @@ const modalClose          = document.getElementById('modalClose');
 const btnCreateBig        = document.getElementById('btnCreateBig');
 const btnCreateNew        = document.getElementById('btnCreateNew');
 const btnGenerateModal    = document.getElementById('btnGenerateModal');
+const modalLimitText      = document.getElementById('modalLimitText');
+
+const authModal           = document.getElementById('authModal');
+const authModalClose      = document.getElementById('authModalClose');
+const authBtn             = document.getElementById('authBtn');
+const authBtnText         = document.getElementById('authBtnText');
+const tabLoginBtn         = document.getElementById('tabLoginBtn');
+const tabRegisterBtn      = document.getElementById('tabRegisterBtn');
+const authForm            = document.getElementById('authForm');
+const authUsername        = document.getElementById('authUsername');
+const authPassword        = document.getElementById('authPassword');
+const authSubmitBtn       = document.getElementById('authSubmitBtn');
+const authSubmitText      = document.getElementById('authSubmitText');
 
 const confirmModal        = document.getElementById('confirmModal');
 const confirmTitle        = document.getElementById('confirmTitle');
@@ -76,16 +201,82 @@ const confirmDesc         = document.getElementById('confirmDesc');
 const confirmCancel       = document.getElementById('confirmCancel');
 const confirmOk           = document.getElementById('confirmOk');
 
+// Theme & Settings
+const langToggle          = document.getElementById('langToggle');
+const themeToggle         = document.getElementById('themeToggle');
+const themeIcon           = document.getElementById('themeIcon');
+const paletteToggle       = document.getElementById('paletteToggle');
+const paletteMenu         = document.getElementById('paletteMenu');
 const audioToggle         = document.getElementById('audioToggle');
 const audioIcon           = document.getElementById('audioIcon');
 
 // ─── Inicialización ───────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  initThemeAndColor();
+  initLanguage();
   initAudioUI();
   initSocket();
   initEventListeners();
+  await checkAuthSession();
   await loadAliases();
 });
+
+// ─── Tema Claro / Oscuro y Paletas de Colores ─────────
+function initThemeAndColor() {
+  const savedTheme = localStorage.getItem('ghost_theme') || 'dark';
+  const savedColor = localStorage.getItem('ghost_color') || 'emerald';
+
+  document.body.setAttribute('data-theme', savedTheme);
+  document.body.setAttribute('data-color', savedColor);
+  updateThemeIcon(savedTheme);
+
+  // Toggle Tema
+  themeToggle.addEventListener('click', () => {
+    const current = document.body.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.body.setAttribute('data-theme', next);
+    localStorage.setItem('ghost_theme', next);
+    updateThemeIcon(next);
+  });
+
+  // Toggle Paleta
+  paletteToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    paletteMenu.classList.toggle('open');
+  });
+
+  document.addEventListener('click', () => {
+    paletteMenu.classList.remove('open');
+  });
+
+  document.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const color = btn.getAttribute('data-palette');
+      document.body.setAttribute('data-color', color);
+      localStorage.setItem('ghost_color', color);
+      paletteMenu.classList.remove('open');
+      showToast(`${t('accent_color')}: ${color}`, 'info');
+    });
+  });
+}
+
+function updateThemeIcon(theme) {
+  themeIcon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+}
+
+function initLanguage() {
+  applyLanguage(currentLang);
+  langToggle.addEventListener('click', () => {
+    const next = currentLang === 'es' ? 'en' : 'es';
+    applyLanguage(next);
+  });
+}
+
+function updateLimitInfoText() {
+  if (modalLimitText) {
+    modalLimitText.textContent = currentUser ? t('limit_user') : t('limit_guest');
+  }
+}
 
 // ─── Audio UI ─────────────────────────────────────────
 function initAudioUI() {
@@ -103,26 +294,54 @@ function updateAudioIcon() {
   audioToggle.style.opacity = audio.enabled ? '1' : '0.5';
 }
 
+// ─── Sesión y Autenticación ───────────────────────────
+async function checkAuthSession() {
+  try {
+    const res = await fetch('/api/auth/me');
+    const data = await res.json();
+    currentUser = data.user || null;
+    maxLimit = data.maxLimit || 5;
+    turnstileSiteKey = data.turnstileSiteKey || '';
+
+    updateAuthUI();
+    updateLimitInfoText();
+  } catch (e) {
+    currentUser = null;
+    maxLimit = 5;
+  }
+}
+
+function updateAuthUI() {
+  if (currentUser) {
+    authBtnText.textContent = currentUser.username;
+    authBtn.classList.add('logged-in');
+    authBtn.title = `${currentUser.username} (${t('logout')})`;
+  } else {
+    authBtnText.textContent = t('login');
+    authBtn.classList.remove('logged-in');
+    authBtn.title = t('login');
+  }
+  updateLimitBadge();
+}
+
+function updateLimitBadge() {
+  aliasCountBadge.textContent = `${aliases.length}/${maxLimit}`;
+}
+
 // ─── Socket.io ────────────────────────────────────────
 function initSocket() {
   socket = io();
 
-  socket.on('connect', () => {
-    console.log('[Socket] Conectado en tiempo real al servidor');
-  });
-
   socket.on('new_message', (msg) => {
     const targetEmail = (msg.alias_email || '').toLowerCase();
     
-    // Si el mensaje es para el alias que está viendo el usuario
     if (currentAlias && currentAlias.email.toLowerCase() === targetEmail) {
       audio.playDing();
       messages.unshift(msg);
       renderMessagesFeed();
-      showToast(`Nuevo correo recibido: ${msg.subject}`, 'success');
+      showToast(`${t('inbox')}: ${msg.subject}`, 'success');
     }
 
-    // Actualizar conteo en el historial del sidebar
     const aliasObj = aliases.find(a => a.email.toLowerCase() === targetEmail);
     if (aliasObj) {
       aliasObj.message_count = (aliasObj.message_count || 0) + 1;
@@ -167,13 +386,13 @@ async function loadAliases() {
 }
 
 function renderSidebarList() {
-  aliasCountBadge.textContent = aliases.length;
+  updateLimitBadge();
 
   if (aliases.length === 0) {
     aliasList.innerHTML = `
       <div class="sidebar-empty">
         <i class="fa-solid fa-inbox"></i>
-        <p>Sin alias generados</p>
+        <p>${t('no_aliases')}</p>
       </div>`;
     return;
   }
@@ -225,7 +444,6 @@ function selectAlias(email) {
 
   aliasEmailDisplay.textContent = target.email;
 
-  // Provider badge
   let badgeHtml = '<i class="fa-brands fa-google"></i> Gmail';
   if (target.provider === 'googlemail') {
     badgeHtml = '<i class="fa-brands fa-google"></i> Googlemail';
@@ -249,7 +467,6 @@ async function loadMessages(aliasEmail) {
     messages = await res.json();
     renderMessagesFeed();
   } catch (err) {
-    console.error('Error al cargar mensajes:', err);
     messages = [];
     renderMessagesFeed();
   }
@@ -272,40 +489,37 @@ function renderMessagesFeed() {
     card.className = 'message-card';
     card.id = `msg-${msg.id}`;
 
-    const dateFormatted = new Date(msg.date_received).toLocaleString('es-PE', {
+    const dateFormatted = new Date(msg.date_received).toLocaleString(currentLang === 'es' ? 'es-PE' : 'en-US', {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
     });
 
-    // Banner OTP
     let otpHtml = '';
     if (msg.otp) {
       otpHtml = `
         <div class="otp-spotlight">
           <div class="otp-left">
-            <span class="otp-tag-label"><i class="fa-solid fa-key"></i> CÓDIGO DETECTADO:</span>
+            <span class="otp-tag-label"><i class="fa-solid fa-key"></i> ${t('detected_code')}</span>
             <span class="otp-code-value">${escapeHtml(msg.otp)}</span>
           </div>
           <button class="btn-quick-copy-otp" onclick="copyOtpCode('${escapeHtml(msg.otp)}')">
             <i class="fa-regular fa-copy"></i>
-            <span>Copiar</span>
+            <span>${t('copy')}</span>
           </button>
         </div>`;
     }
 
-    // Botón de acción si hay URL
     let actionBtnHtml = '';
     if (msg.action_url) {
       actionBtnHtml = `
         <div class="action-link-row">
           <a href="${escapeHtml(msg.action_url)}" target="_blank" rel="noopener noreferrer" class="btn-open-action-link">
             <i class="fa-solid fa-arrow-up-right-from-square"></i>
-            <span>Confirmar / Abrir Enlace</span>
+            <span>${t('confirm_action_link')}</span>
           </a>
         </div>`;
     }
 
-    // Cuerpo expandible (HTML en iframe o texto)
     const bodyContent = msg.html
       ? `<iframe class="email-iframe" srcdoc="${escapeAttr(msg.html)}" sandbox="allow-same-origin" scrolling="auto"></iframe>`
       : `<div class="email-plain">${escapeHtml(msg.text_body || '')}</div>`;
@@ -319,18 +533,18 @@ function renderMessagesFeed() {
           </div>
           <div class="card-meta">
             <span class="date-stamp">${dateFormatted}</span>
-            <button class="btn-delete-msg" title="Eliminar este mensaje" data-id="${msg.id}">
+            <button class="btn-delete-msg" title="${t('delete')}" data-id="${msg.id}">
               <i class="fa-solid fa-trash"></i>
             </button>
           </div>
         </div>
 
         <h3 class="message-subject">${escapeHtml(msg.subject)}</h3>
-        <p class="card-preview">${escapeHtml(msg.preview || '(Sin texto previo)')}</p>
+        <p class="card-preview">${escapeHtml(msg.preview || '')}</p>
 
         <div class="card-expand-row">
           <i class="fa-solid fa-chevron-down expand-arrow"></i>
-          <span class="expand-text">Ver correo completo</span>
+          <span class="expand-text">${t('full_email_open')}</span>
         </div>
       </div>
 
@@ -344,30 +558,27 @@ function renderMessagesFeed() {
       </div>
     `;
 
-    // Interacción para colapsar/expandir
     const header = card.querySelector('.card-header');
     const bodyExpanded = card.querySelector('.card-body-expanded');
     const arrow = card.querySelector('.expand-arrow');
     const expandText = card.querySelector('.expand-text');
     const deleteBtn = card.querySelector('.btn-delete-msg');
 
-    // Botón eliminar mensaje
     deleteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       openConfirmDialog({
-        title: '¿Eliminar este mensaje?',
-        desc: 'Esta acción no se puede deshacer y el mensaje se borrará permanentemente.',
+        title: t('confirm_title'),
+        desc: t('delete_msg_prompt'),
         onConfirm: async () => {
           await deleteMessage(msg.id);
         }
       });
     });
 
-    // Expandir / Ocultar correo completo
     header.addEventListener('click', () => {
       const isOpen = bodyExpanded.classList.toggle('open');
       arrow.classList.toggle('open', isOpen);
-      expandText.textContent = isOpen ? 'Ocultar correo completo' : 'Ver correo completo';
+      expandText.textContent = isOpen ? t('full_email_close') : t('full_email_open');
 
       if (isOpen) {
         const iframe = card.querySelector('.email-iframe');
@@ -394,17 +605,16 @@ async function deleteMessage(id) {
     if (res.ok) {
       messages = messages.filter(m => m.id !== id);
       renderMessagesFeed();
-      // Actualizar conteo en sidebar
       if (currentAlias && currentAlias.message_count > 0) {
         currentAlias.message_count--;
         renderSidebarList();
       }
-      showToast('Mensaje eliminado permanentemente', 'success');
+      showToast(t('delete') + ' OK', 'success');
     } else {
-      showToast('Error al eliminar el mensaje', 'error');
+      showToast('Error', 'error');
     }
   } catch (err) {
-    showToast('Error de conexión', 'error');
+    showToast('Error', 'error');
   }
 }
 
@@ -412,64 +622,164 @@ async function deleteMessage(id) {
 function confirmDeleteCurrentAlias() {
   if (!currentAlias) return;
   openConfirmDialog({
-    title: '¿Eliminar correo temporal?',
-    desc: `Se borrará el alias <b>${escapeHtml(currentAlias.email)}</b> y todos los mensajes que recibió. No se podrá recuperar.`,
+    title: t('confirm_title'),
+    desc: `<b>${escapeHtml(currentAlias.email)}</b><br>${t('delete_alias_prompt')}`,
     onConfirm: async () => {
       try {
         const res = await fetch(`/api/aliases/${encodeURIComponent(currentAlias.email)}`, { method: 'DELETE' });
         if (res.ok) {
           aliases = aliases.filter(a => a.email.toLowerCase() !== currentAlias.email.toLowerCase());
-          showToast('Correo temporal eliminado', 'success');
+          showToast(t('delete') + ' OK', 'success');
           if (aliases.length > 0) {
             selectAlias(aliases[0].email);
           } else {
             showWelcomeScreen();
           }
         } else {
-          showToast('No se pudo eliminar el alias', 'error');
+          showToast('Error', 'error');
         }
       } catch (e) {
-        showToast('Error de conexión', 'error');
+        showToast('Error', 'error');
       }
     }
   });
 }
 
-// ─── Crear Nuevo Alias ────────────────────────────────
+// ─── Crear Nuevo Alias con Validación de Límites ──────
 async function createNewAlias() {
+  if (aliases.length >= maxLimit) {
+    const msg = currentUser ? t('limit_reached_user') : t('limit_reached_guest');
+    showToast(msg, 'error');
+    if (!currentUser) {
+      closeModal(createModal);
+      openAuthModal('register');
+    }
+    return;
+  }
+
   const selectedRadio = document.querySelector('input[name="provider"]:checked');
   const mode = selectedRadio ? selectedRadio.value : 'dots';
 
+  let turnstileToken = '';
+  if (window.turnstile && turnstileCreateWidgetId !== null) {
+    try { turnstileToken = turnstile.getResponse(turnstileCreateWidgetId); } catch(e) {}
+  }
+
   btnGenerateModal.disabled = true;
-  btnGenerateModal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generando...';
+  btnGenerateModal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...';
 
   try {
     const res = await fetch('/api/aliases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode })
+      body: JSON.stringify({ mode, turnstileToken })
     });
 
     const data = await res.json();
 
     if (!res.ok) {
-      showToast(data.error || 'Error al generar alias', 'error');
+      showToast(data.error || 'Error', 'error');
+      if (data.limitReached && !currentUser) {
+        closeModal(createModal);
+        openAuthModal('register');
+      }
       return;
     }
 
     closeModal(createModal);
     await loadAliases();
     selectAlias(data.email);
-    showToast(`Correo generado: ${data.email}`, 'success');
+    showToast(`${data.email}`, 'success');
   } catch (err) {
-    showToast('Error al conectar con el servidor', 'error');
+    showToast('Error de conexión', 'error');
   } finally {
     btnGenerateModal.disabled = false;
-    btnGenerateModal.innerHTML = '<i class="fa-solid fa-bolt"></i> Generar alias aleatorio';
+    btnGenerateModal.innerHTML = `<i class="fa-solid fa-bolt"></i> <span>${t('btn_generate')}</span>`;
   }
 }
 
-// ─── Confirm Dialog Reutilizable ──────────────────────
+// ─── Autenticación (Login / Registro) ─────────────────
+function openAuthModal(tab = 'login') {
+  currentAuthTab = tab;
+  if (tab === 'login') {
+    tabLoginBtn.classList.add('active');
+    tabRegisterBtn.classList.remove('active');
+    authSubmitText.textContent = t('login');
+  } else {
+    tabRegisterBtn.classList.add('active');
+    tabLoginBtn.classList.remove('active');
+    authSubmitText.textContent = t('tab_register');
+  }
+  authUsername.value = '';
+  authPassword.value = '';
+  openModal(authModal);
+  renderTurnstileWidgets();
+}
+
+async function handleAuthSubmit() {
+  const username = authUsername.value.trim();
+  const password = authPassword.value;
+  if (!username || !password) return;
+
+  let turnstileToken = '';
+  if (window.turnstile && turnstileAuthWidgetId !== null) {
+    try { turnstileToken = turnstile.getResponse(turnstileAuthWidgetId); } catch(e) {}
+  }
+
+  const endpoint = currentAuthTab === 'register' ? '/api/auth/register' : '/api/auth/login';
+
+  authSubmitBtn.disabled = true;
+  authSubmitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...';
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, turnstileToken })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showToast(data.error || 'Error', 'error');
+      return;
+    }
+
+    currentUser = data.user;
+    maxLimit = data.maxLimit || 10;
+    updateAuthUI();
+    closeModal(authModal);
+    showToast(`Bienvenido ${currentUser.username} (Límite: ${maxLimit})`, 'success');
+    await loadAliases();
+  } catch (e) {
+    showToast('Error de conexión', 'error');
+  } finally {
+    authSubmitBtn.disabled = false;
+    authSubmitText.textContent = currentAuthTab === 'register' ? t('tab_register') : t('login');
+  }
+}
+
+async function handleLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  currentUser = null;
+  maxLimit = 5;
+  updateAuthUI();
+  showToast(t('logout'), 'info');
+  await loadAliases();
+}
+
+function renderTurnstileWidgets() {
+  if (!turnstileSiteKey || !window.turnstile) return;
+  try {
+    if (turnstileAuthWidgetId === null && document.getElementById('turnstileAuthContainer')) {
+      turnstileAuthWidgetId = turnstile.render('#turnstileAuthContainer', { sitekey: turnstileSiteKey, theme: 'auto' });
+    }
+    if (turnstileCreateWidgetId === null && document.getElementById('turnstileCreateContainer')) {
+      turnstileCreateWidgetId = turnstile.render('#turnstileCreateContainer', { sitekey: turnstileSiteKey, theme: 'auto' });
+    }
+  } catch(e) {}
+}
+
+// ─── Confirm Dialog ───────────────────────────────────
 function openConfirmDialog({ title, desc, onConfirm }) {
   confirmTitle.textContent = title;
   confirmDesc.innerHTML = desc;
@@ -482,9 +792,10 @@ function closeConfirmDialog() {
   pendingConfirmCallback = null;
 }
 
-// ─── Helpers: Modal & Toast ───────────────────────────
+// ─── Helpers: Modal, Copy & Toast ─────────────────────
 function openModal(modal) {
   modal.classList.add('open');
+  renderTurnstileWidgets();
 }
 
 function closeModal(modal) {
@@ -493,21 +804,21 @@ function closeModal(modal) {
 
 window.copyOtpCode = function(code) {
   navigator.clipboard.writeText(code);
-  showToast(`Código ${code} copiado al portapapeles`, 'success');
+  showToast(`${t('detected_code')} ${code}`, 'success');
 };
 
 function copyCurrentEmail() {
   if (!currentAlias) return;
   navigator.clipboard.writeText(currentAlias.email);
-  copyBtnText.textContent = '¡COPIADO!';
-  btnCopyAlias.style.background = '#10b981';
+  copyBtnText.textContent = t('copied');
+  btnCopyAlias.style.background = 'var(--accent-primary)';
   btnCopyAlias.style.color = '#fff';
   setTimeout(() => {
-    copyBtnText.textContent = 'COPIAR';
+    copyBtnText.textContent = t('copy');
     btnCopyAlias.style.background = '';
     btnCopyAlias.style.color = '';
   }, 1800);
-  showToast(`Copiado: ${currentAlias.email}`, 'success');
+  showToast(`${currentAlias.email}`, 'success');
 }
 
 function showToast(text, type = 'info') {
@@ -536,26 +847,69 @@ function escapeAttr(str) {
 
 // ─── Event Listeners ──────────────────────────────────
 function initEventListeners() {
-  // Copiar correo
   btnCopyAlias.addEventListener('click', copyCurrentEmail);
-
-  // Eliminar alias actual
   btnDeleteAlias.addEventListener('click', confirmDeleteCurrentAlias);
 
-  // Abrir modal de creación
-  btnCreateBig.addEventListener('click', () => openModal(createModal));
-  btnCreateNew.addEventListener('click', () => openModal(createModal));
+  // Botón crear en sidebar y bienvenida
+  btnCreateBig.addEventListener('click', () => {
+    if (aliases.length >= maxLimit) {
+      showToast(currentUser ? t('limit_reached_user') : t('limit_reached_guest'), 'error');
+      if (!currentUser) openAuthModal('register');
+      return;
+    }
+    openModal(createModal);
+  });
 
-  // Cerrar modal
+  btnCreateNew.addEventListener('click', () => {
+    if (aliases.length >= maxLimit) {
+      showToast(currentUser ? t('limit_reached_user') : t('limit_reached_guest'), 'error');
+      if (!currentUser) openAuthModal('register');
+      return;
+    }
+    openModal(createModal);
+  });
+
   modalClose.addEventListener('click', () => closeModal(createModal));
   createModal.addEventListener('click', (e) => {
     if (e.target === createModal) closeModal(createModal);
   });
-
-  // Generar en modal
   btnGenerateModal.addEventListener('click', createNewAlias);
 
-  // Modal de confirmación
+  // Auth Modal
+  authBtn.addEventListener('click', () => {
+    if (currentUser) {
+      openConfirmDialog({
+        title: t('logout'),
+        desc: `¿Deseas cerrar la sesión de <b>${escapeHtml(currentUser.username)}</b>?`,
+        onConfirm: handleLogout
+      });
+    } else {
+      openAuthModal('login');
+    }
+  });
+
+  authModalClose.addEventListener('click', () => closeModal(authModal));
+  authModal.addEventListener('click', (e) => {
+    if (e.target === authModal) closeModal(authModal);
+  });
+
+  tabLoginBtn.addEventListener('click', () => {
+    currentAuthTab = 'login';
+    tabLoginBtn.classList.add('active');
+    tabRegisterBtn.classList.remove('active');
+    authSubmitText.textContent = t('login');
+  });
+
+  tabRegisterBtn.addEventListener('click', () => {
+    currentAuthTab = 'register';
+    tabRegisterBtn.classList.add('active');
+    tabLoginBtn.classList.remove('active');
+    authSubmitText.textContent = t('tab_register');
+  });
+
+  authForm.addEventListener('submit', handleAuthSubmit);
+
+  // Confirm Modal
   confirmCancel.addEventListener('click', closeConfirmDialog);
   confirmModal.addEventListener('click', (e) => {
     if (e.target === confirmModal) closeConfirmDialog();
