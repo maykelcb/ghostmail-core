@@ -25,8 +25,8 @@ class GhostAudio {
       const gain = this.ctx.createGain();
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, now); // D5
-      osc.frequency.exponentialRampToValueAtTime(880, now + 0.1); // A5
+      osc.frequency.setValueAtTime(587.33, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.1);
 
       gain.gain.setValueAtTime(0.08, now);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
@@ -36,9 +36,7 @@ class GhostAudio {
 
       osc.start(now);
       osc.stop(now + 0.35);
-    } catch (e) {
-      // Silent fallback
-    }
+    } catch (e) {}
   }
 }
 
@@ -46,6 +44,7 @@ const audio = new GhostAudio();
 
 // ─── State Management ────────────────────────────────
 let currentEmail = localStorage.getItem('ghost_current_email') || '';
+let currentNormalized = '';   // base sin puntos ni +, minúscula
 let currentBase = '';
 let activeMode = localStorage.getItem('ghost_mode') || 'dots';
 let messages = [];
@@ -53,33 +52,52 @@ let socket = null;
 
 // DOM Elements
 const currentEmailDisplay = document.getElementById('currentEmailDisplay');
-const baseAccountDisplay = document.getElementById('baseAccountDisplay');
-const btnCopyEmail = document.getElementById('btnCopyEmail');
-const copyBtnText = document.getElementById('copyBtnText');
-const btnGenerateNew = document.getElementById('btnGenerateNew');
-const modePills = document.querySelectorAll('.mode-pill');
-const messagesFeed = document.getElementById('messagesFeed');
-const emptyState = document.getElementById('emptyState');
-const messageCountBadge = document.getElementById('messageCountBadge');
-const filterCurrentOnly = document.getElementById('filterCurrentOnly');
-const poolStatsPill = document.getElementById('poolStatsPill');
-const statsAccountCount = document.getElementById('statsAccountCount');
-const statsComboCount = document.getElementById('statsComboCount');
-const clearInboxBtn = document.getElementById('clearInboxBtn');
-const audioToggle = document.getElementById('audioToggle');
-const audioIcon = document.getElementById('audioIcon');
+const baseAccountDisplay  = document.getElementById('baseAccountDisplay');
+const btnCopyEmail        = document.getElementById('btnCopyEmail');
+const copyBtnText         = document.getElementById('copyBtnText');
+const btnGenerateNew      = document.getElementById('btnGenerateNew');
+const modePills           = document.querySelectorAll('.mode-pill');
+const messagesFeed        = document.getElementById('messagesFeed');
+const emptyState          = document.getElementById('emptyState');
+const messageCountBadge   = document.getElementById('messageCountBadge');
+const statsAccountCount   = document.getElementById('statsAccountCount');
+const statsComboCount     = document.getElementById('statsComboCount');
+const clearInboxBtn       = document.getElementById('clearInboxBtn');
+const audioToggle         = document.getElementById('audioToggle');
+const audioIcon           = document.getElementById('audioIcon');
 
-// Modal Elements
-const messageModal = document.getElementById('messageModal');
-const modalCloseBtn = document.getElementById('modalCloseBtn');
-const modalFrom = document.getElementById('modalFrom');
-const modalDate = document.getElementById('modalDate');
-const modalSubject = document.getElementById('modalSubject');
-const modalTo = document.getElementById('modalTo');
-const modalOtpCard = document.getElementById('modalOtpCard');
-const modalOtpValue = document.getElementById('modalOtpValue');
-const modalBtnCopyOtp = document.getElementById('modalBtnCopyOtp');
-const modalBody = document.getElementById('modalBody');
+// ─── Helpers ─────────────────────────────────────────
+function normalizeLocal(email) {
+  if (!email) return '';
+  return email.toLowerCase().split('@')[0].replace(/\./g, '').split('+')[0];
+}
+
+function getRecipientString(to) {
+  if (!to) return '';
+  if (typeof to === 'string') return to;
+  if (to.text && typeof to.text === 'string') return to.text;
+  if (Array.isArray(to.value) && to.value[0]?.address) return to.value[0].address;
+  if (to.value && typeof to.value === 'string') return to.value;
+  return String(to);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** ¿El mensaje llegó a la cuenta activa actual? */
+function belongsToCurrentEmail(msg) {
+  if (!currentNormalized) return true;
+  const toStr  = getRecipientString(msg.to).toLowerCase();
+  const toClean = normalizeLocal(toStr);
+  const baseClean = normalizeLocal(msg.baseAccount || '');
+  return (
+    toClean === currentNormalized ||
+    (msg.normalizedTo && normalizeLocal(msg.normalizedTo) === currentNormalized) ||
+    (baseClean && baseClean === currentNormalized)
+  );
+}
 
 // ─── Initialization ──────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -88,7 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initEventListeners();
   loadServerStatus();
 
-  // Si ya había un modo guardado, activarlo
   modePills.forEach(pill => {
     pill.classList.toggle('active', pill.getAttribute('data-mode') === activeMode);
   });
@@ -96,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!currentEmail) {
     generateNewEmail();
   } else {
+    currentNormalized = normalizeLocal(currentEmail);
     currentEmailDisplay.textContent = currentEmail;
     fetchExistingMessages();
   }
@@ -142,14 +160,13 @@ function initSocket() {
   });
 
   socket.on('email_received', email => {
-    // Agregar al inicio
     messages.unshift(email);
     renderMessages();
-    audio.playDing();
-
-    // Notificación en Toast
-    const otpNotice = email.otp ? ` [CÓDIGO: ${email.otp}]` : '';
-    showToast(`Nuevo correo de ${email.from}${otpNotice}`, 'success');
+    if (belongsToCurrentEmail(email)) {
+      audio.playDing();
+      const otpNotice = email.otp ? ` · Código: ${email.otp}` : '';
+      showToast(`Nuevo correo de ${email.from}${otpNotice}`, 'success');
+    }
   });
 
   socket.on('messages_cleared', () => {
@@ -163,16 +180,16 @@ function initSocket() {
 async function generateNewEmail() {
   btnGenerateNew.classList.add('rotating');
   try {
-    const res = await fetch(`/api/generate?mode=${activeMode}`);
+    const res  = await fetch(`/api/generate?mode=${activeMode}`);
     const data = await res.json();
     if (data.success) {
-      currentEmail = data.email;
-      currentBase = data.baseAccount;
+      currentEmail      = data.email;
+      currentNormalized = normalizeLocal(currentEmail);
+      currentBase       = data.baseAccount;
       localStorage.setItem('ghost_current_email', currentEmail);
       currentEmailDisplay.textContent = currentEmail;
-      baseAccountDisplay.textContent = currentBase;
+      if (baseAccountDisplay) baseAccountDisplay.textContent = currentBase;
 
-      // Animar actualización
       currentEmailDisplay.style.opacity = '0.3';
       setTimeout(() => (currentEmailDisplay.style.opacity = '1'), 150);
 
@@ -187,52 +204,28 @@ async function generateNewEmail() {
 
 async function loadServerStatus() {
   try {
-    const res = await fetch('/api/status');
+    const res  = await fetch('/api/status');
     const data = await res.json();
     statsAccountCount.textContent = `${data.activeAccounts} Cuenta(s)`;
-    statsComboCount.textContent = `${data.totalCombinations.toLocaleString()} Alias`;
-  } catch (e) {
-    // Fallback silent
-  }
+    statsComboCount.textContent   = `${data.totalCombinations.toLocaleString()} Alias`;
+  } catch (e) {}
 }
 
 async function fetchExistingMessages() {
   try {
-    const res = await fetch('/api/messages');
+    const res  = await fetch('/api/messages');
     const data = await res.json();
     if (data.messages) {
       messages = data.messages;
       renderMessages();
     }
-  } catch (e) {
-    // Fallback
-  }
-}
-
-function getRecipientString(to) {
-  if (!to) return '';
-  if (typeof to === 'string') return to;
-  if (to.text && typeof to.text === 'string') return to.text;
-  if (Array.isArray(to.value) && to.value[0]?.address) return to.value[0].address;
-  if (to.value && typeof to.value === 'string') return to.value;
-  return String(to);
+  } catch (e) {}
 }
 
 // ─── Render Messages Feed ────────────────────────────
 function renderMessages() {
-  const onlyCurrent = filterCurrentOnly ? filterCurrentOnly.checked : false;
-  const currentClean = (currentEmail || '').replace(/\./g, '').split('+')[0].toLowerCase();
-
-  const filtered = messages.filter(m => {
-    if (!onlyCurrent) return true;
-    const toStr = getRecipientString(m.to).toLowerCase();
-    const toClean = toStr.replace(/\./g, '').split('+')[0];
-    return (
-      toStr.includes(currentEmail.toLowerCase()) ||
-      toClean.includes(currentClean) ||
-      (m.normalizedTo && m.normalizedTo.toLowerCase().includes(currentClean))
-    );
-  });
+  // Filtro estricto: solo mensajes del alias activo actual
+  const filtered = messages.filter(belongsToCurrentEmail);
 
   messageCountBadge.textContent = `${filtered.length} mensaje(s)`;
 
@@ -244,45 +237,47 @@ function renderMessages() {
   }
 
   emptyState.style.display = 'none';
-  messagesFeed.innerHTML = '';
+  messagesFeed.innerHTML   = '';
 
   filtered.forEach(msg => {
     const card = document.createElement('div');
     card.className = `message-card ${msg.otp ? 'has-otp' : ''}`;
 
-    const dateFormatted = new Date(msg.date).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
+    const dateFormatted = new Date(msg.date).toLocaleString('es-PE', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
     });
 
-    const toDisplay = getRecipientString(msg.to);
-
+    // Banner OTP si se detectó código
     let otpHtml = '';
     if (msg.otp) {
       otpHtml = `
         <div class="otp-spotlight">
           <div class="otp-left">
             <span class="otp-tag-label"><i class="fa-solid fa-key"></i> CÓDIGO DETECTADO:</span>
-            <span class="otp-code-value">${msg.otp}</span>
+            <span class="otp-code-value">${escapeHtml(msg.otp)}</span>
           </div>
-          <button class="btn-quick-copy-otp" onclick="copyOtpCode('${msg.otp}')">
+          <button class="btn-quick-copy-otp" onclick="copyOtpCode('${escapeHtml(msg.otp)}')">
             <i class="fa-regular fa-copy"></i>
             <span>Copiar</span>
           </button>
-        </div>
-      `;
+        </div>`;
     }
 
+    // Botón de enlace de acción si lo hay
     let actionLinkHtml = '';
     if (msg.actionUrl) {
       actionLinkHtml = `
-        <a href="${msg.actionUrl}" target="_blank" rel="noopener noreferrer" class="btn-open-action-link">
+        <a href="${escapeHtml(msg.actionUrl)}" target="_blank" rel="noopener noreferrer" class="btn-open-action-link">
           <i class="fa-solid fa-arrow-up-right-from-square"></i>
           <span>Confirmar / Abrir Enlace</span>
-        </a>
-      `;
+        </a>`;
     }
+
+    // Cuerpo del correo: HTML completo dentro de iframe aislado, o texto plano
+    const bodyContent = msg.html
+      ? `<iframe class="email-iframe" srcdoc="${escapeAttr(msg.html)}" sandbox="allow-same-origin" scrolling="auto"></iframe>`
+      : `<div class="email-plain">${escapeHtml(msg.text || '')}</div>`;
 
     card.innerHTML = `
       <div class="message-card-top">
@@ -294,64 +289,30 @@ function renderMessages() {
       </div>
 
       <h3 class="message-subject">${escapeHtml(msg.subject)}</h3>
-      
+
       ${otpHtml}
 
-      <p class="message-preview">${escapeHtml(msg.preview || 'Sin vista previa disponible.')}</p>
-
-      <div class="card-bottom-actions">
-        <span class="card-target-alias">Para: ${escapeHtml(toDisplay)}</span>
-        <div style="display:flex; gap:8px;">
-          ${actionLinkHtml}
-          <button class="btn-view-full" onclick="openMessageDetail('${msg.id}')">
-            <i class="fa-regular fa-envelope"></i>
-            <span>Ver Correo Completo</span>
-          </button>
-        </div>
+      <div class="email-body-wrapper">
+        ${bodyContent}
       </div>
+
+      ${actionLinkHtml ? `<div class="card-action-row">${actionLinkHtml}</div>` : ''}
     `;
+
+    // Ajustar altura del iframe tras cargar su contenido
+    const iframe = card.querySelector('.email-iframe');
+    if (iframe) {
+      iframe.addEventListener('load', () => {
+        try {
+          const h = iframe.contentDocument?.body?.scrollHeight;
+          if (h) iframe.style.height = (h + 24) + 'px';
+        } catch (e) {}
+      });
+    }
 
     messagesFeed.appendChild(card);
   });
 }
-
-// ─── Modal Detail Viewer ─────────────────────────────
-window.openMessageDetail = function(msgId) {
-  const msg = messages.find(m => m.id === msgId);
-  if (!msg) return;
-
-  modalFrom.textContent = `De: ${msg.from}`;
-  modalDate.textContent = new Date(msg.date).toLocaleString();
-  modalSubject.textContent = msg.subject;
-  modalTo.textContent = `Destinatario: ${getRecipientString(msg.to)}`;
-
-  if (msg.otp) {
-    modalOtpCard.style.display = 'block';
-    modalOtpValue.textContent = msg.otp;
-    modalBtnCopyOtp.onclick = () => copyOtpCode(msg.otp);
-  } else {
-    modalOtpCard.style.display = 'none';
-  }
-
-  // Si tiene HTML sanitizado o texto plano
-  if (msg.html) {
-    modalBody.innerHTML = msg.html;
-  } else {
-    modalBody.innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit;">${escapeHtml(msg.text)}</pre>`;
-  }
-
-  messageModal.classList.add('open');
-};
-
-modalCloseBtn.addEventListener('click', () => {
-  messageModal.classList.remove('open');
-});
-
-messageModal.addEventListener('click', e => {
-  if (e.target === messageModal) {
-    messageModal.classList.remove('open');
-  }
-});
 
 // ─── Helpers: Copy & Toast ───────────────────────────
 window.copyOtpCode = function(code) {
@@ -377,17 +338,20 @@ function showToast(text, type = 'info') {
   toast.className = `toast toast-${type}`;
   toast.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>${text}</span>`;
   container.appendChild(toast);
-
   setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateY(10px)';
     setTimeout(() => toast.remove(), 250);
-  }, 3200);
+  }, 3500);
 }
 
-function escapeHtml(str) {
+/** Escapa el HTML para usarlo dentro del atributo srcdoc del iframe */
+function escapeAttr(str) {
   if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ─── Event Listeners ─────────────────────────────────
@@ -404,8 +368,6 @@ function initEventListeners() {
       generateNewEmail();
     });
   });
-
-  filterCurrentOnly.addEventListener('change', renderMessages);
 
   clearInboxBtn.addEventListener('click', async () => {
     if (confirm('¿Deseas vaciar la bandeja de entrada local?')) {

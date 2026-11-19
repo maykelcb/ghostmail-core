@@ -923,3 +923,40 @@ body {
     justify-content: center;
   }
 }
+
+/* =============================================
+   Email body rendered inline (iframe / plain)
+   ============================================= */
+.email-body-wrapper {
+  margin-top: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #fff;
+}
+
+.email-iframe {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  border: none;
+  background: #fff;
+  transition: height 0.2s ease;
+}
+
+.email-plain {
+  padding: 16px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #333;
+  white-space: pre-wrap;
+  background: #fff;
+  word-break: break-word;
+}
+
+.card-action-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
