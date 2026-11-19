@@ -209,17 +209,28 @@ async function fetchExistingMessages() {
   }
 }
 
+function getRecipientString(to) {
+  if (!to) return '';
+  if (typeof to === 'string') return to;
+  if (to.text && typeof to.text === 'string') return to.text;
+  if (Array.isArray(to.value) && to.value[0]?.address) return to.value[0].address;
+  if (to.value && typeof to.value === 'string') return to.value;
+  return String(to);
+}
+
 // ─── Render Messages Feed ────────────────────────────
 function renderMessages() {
-  const onlyCurrent = filterCurrentOnly.checked;
-  const currentNormalized = currentEmail.replace(/\./g, '').split('+')[0].toLowerCase();
+  const onlyCurrent = filterCurrentOnly ? filterCurrentOnly.checked : false;
+  const currentClean = (currentEmail || '').replace(/\./g, '').split('+')[0].toLowerCase();
 
   const filtered = messages.filter(m => {
     if (!onlyCurrent) return true;
-    const toNormalized = (m.to || '').replace(/\./g, '').split('+')[0].toLowerCase();
+    const toStr = getRecipientString(m.to).toLowerCase();
+    const toClean = toStr.replace(/\./g, '').split('+')[0];
     return (
-      (m.to || '').toLowerCase().includes(currentEmail.toLowerCase()) ||
-      toNormalized.includes(currentNormalized)
+      toStr.includes(currentEmail.toLowerCase()) ||
+      toClean.includes(currentClean) ||
+      (m.normalizedTo && m.normalizedTo.toLowerCase().includes(currentClean))
     );
   });
 
@@ -244,6 +255,8 @@ function renderMessages() {
       minute: '2-digit',
       second: '2-digit'
     });
+
+    const toDisplay = getRecipientString(msg.to);
 
     let otpHtml = '';
     if (msg.otp) {
@@ -287,7 +300,7 @@ function renderMessages() {
       <p class="message-preview">${escapeHtml(msg.preview || 'Sin vista previa disponible.')}</p>
 
       <div class="card-bottom-actions">
-        <span class="card-target-alias">Para: ${escapeHtml(msg.to)}</span>
+        <span class="card-target-alias">Para: ${escapeHtml(toDisplay)}</span>
         <div style="display:flex; gap:8px;">
           ${actionLinkHtml}
           <button class="btn-view-full" onclick="openMessageDetail('${msg.id}')">
@@ -310,7 +323,7 @@ window.openMessageDetail = function(msgId) {
   modalFrom.textContent = `De: ${msg.from}`;
   modalDate.textContent = new Date(msg.date).toLocaleString();
   modalSubject.textContent = msg.subject;
-  modalTo.textContent = `Destinatario: ${msg.to}`;
+  modalTo.textContent = `Destinatario: ${getRecipientString(msg.to)}`;
 
   if (msg.otp) {
     modalOtpCard.style.display = 'block';

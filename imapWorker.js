@@ -4,6 +4,15 @@ import EventEmitter from 'events';
 import { extractOtpAndLinks } from './otpExtractor.js';
 import { normalizeEmail } from './aliasGenerator.js';
 
+function extractAddressString(val) {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val.text === 'string') return val.text;
+  if (Array.isArray(val.value) && val.value[0]?.address) return val.value[0].address;
+  if (typeof val.value === 'string') return val.value;
+  return String(val);
+}
+
 export class ImapWorkerPool extends EventEmitter {
   constructor(accounts) {
     super();
@@ -62,6 +71,19 @@ export class ImapWorkerPool extends EventEmitter {
       const lock = await client.getMailboxLock('INBOX');
       console.log(`[IMAP] Escuchando buzón INBOX para ${account.user} con IDLE...`);
 
+      // Cargar los últimos 5 mensajes recientes al conectar
+      try {
+        const status = await client.status('INBOX', { messages: true });
+        if (status && status.messages > 0) {
+          const startSeq = Math.max(1, status.messages - 4);
+          for await (const msg of client.fetch(`${startSeq}:*`, { source: true, envelope: true })) {
+            await this.parseAndEmitMessage(msg, account);
+          }
+        }
+      } catch (loadErr) {
+        console.error(`[IMAP] Error al precargar mensajes:`, loadErr.message);
+      }
+
       // Evento de nuevo mensaje
       client.on('exists', async data => {
         try {
@@ -82,19 +104,17 @@ export class ImapWorkerPool extends EventEmitter {
     }
   }
 
-  async processLatestMessage(client, account) {
+  async parseAndEmitMessage(message, account) {
+    if (!message || !message.source) return;
     try {
-      // Buscar el último mensaje no leído o más reciente
-      const message = await client.fetchOne('*', { source: true, envelope: true });
-      if (!message || !message.source) return;
-
       const parsed = await simpleParser(message.source);
 
       // Determinar a quién iba dirigido (para mapear al alias exacto)
-      const deliveredTo = parsed.headers.get('delivered-to') || '';
-      const recipientTo = parsed.to?.text || '';
-      const fullRecipient = deliveredTo || recipientTo;
-      
+      const deliveredToRaw = parsed.headers.get('delivered-to');
+      const deliveredTo = extractAddressString(deliveredToRaw);
+      const recipientTo = extractAddressString(parsed.to);
+      const fullRecipient = deliveredTo || recipientTo || account.user;
+
       const subject = parsed.subject || '(Sin Asunto)';
       const fromText = parsed.from?.text || 'Desconocido';
       const textBody = parsed.text || '';
@@ -117,10 +137,20 @@ export class ImapWorkerPool extends EventEmitter {
         baseAccount: account.user
       };
 
-      console.log(`[IMAP] Nuevo mensaje recibido para [${fullRecipient}] | Asunto: "${subject}" | OTP: ${otp || 'N/A'}`);
+      console.log(`[IMAP] Mensaje procesado para [${fullRecipient}] | Asunto: "${subject}" | OTP: ${otp || 'N/A'}`);
       this.emit('message', emailEvent);
     } catch (err) {
       console.error(`[IMAP] Fallo al parsear correo:`, err.message);
+    }
+  }
+
+  async processLatestMessage(client, account) {
+    try {
+      // Buscar el último mensaje no leído o más reciente
+      const message = await client.fetchOne('*', { source: true, envelope: true });
+      await this.parseAndEmitMessage(message, account);
+    } catch (err) {
+      console.error(`[IMAP] Error al obtener último mensaje:`, err.message);
     }
   }
 

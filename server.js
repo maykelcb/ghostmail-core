@@ -44,6 +44,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 const imapPool = new ImapWorkerPool(accounts);
 
 imapPool.on('message', emailData => {
+  // Evitar duplicados (mismo remitente, asunto y fecha idéntica o similar)
+  const isDuplicate = memoryMessages.some(m => 
+    m.from === emailData.from &&
+    m.subject === emailData.subject &&
+    Math.abs(new Date(m.date) - new Date(emailData.date)) < 5000
+  );
+  if (isDuplicate) return;
+
   // Guardar en memoria (al inicio de la lista)
   memoryMessages.unshift(emailData);
   if (memoryMessages.length > 150) {
