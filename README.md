@@ -1,102 +1,235 @@
+<div align="center">
+
 # 👻 GhostMail Core
-> **High-Performance Disposable Gmail & OTP Stream Engine**  
-> An open-source, self-hosted real-time temporary email platform powered by official Gmail/Googlemail domains, IMAP IDLE push sockets, and automatic OTP code extraction.
 
-[![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green.svg)](https://nodejs.org/)
-[![Socket.io](https://img.shields.io/badge/WebSocket-Socket.io-black.svg)](https://socket.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+**Generador de alias de Gmail desechables con bandeja en tiempo real**
 
----
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/maykelcb/ghostmail-core?style=flat-square)](https://github.com/maykelcb/ghostmail-core/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/maykelcb/ghostmail-core?style=flat-square)](https://github.com/maykelcb/ghostmail-core/network)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://github.com/maykelcb/ghostmail-core/pulls)
 
-## 💡 The Problem & The Solution
+*Genera alias únicos desde tus propias cuentas Gmail · Recibe correos en tiempo real · Detecta códigos OTP automáticamente*
 
-* **The Problem:** 95% of modern websites (SaaS, AI platforms, streaming trials, forums) immediately detect and block disposable email services like *TempMail* or *Mailinator* because they use well-known burner domains.
-* **The Solution:** **GhostMail Core** uses real, official `@gmail.com` and `@googlemail.com` accounts connected via IMAP IDLE. Using dot-matrix mathematical permutations and alias routing, a single base account generates **over 16,000+ unique addresses** that deliver directly to your private, real-time web dashboard without exposing your real identity.
-
----
-
-## ⚡ Key Features
-
-* **🛡️ 100% Official Gmail Domains:** All generated addresses land under `@gmail.com` or `@googlemail.com`, completely bypassing anti-disposable filters.
-* **⚡ Sub-Second Real-Time Push:** Listens to Google's mailboxes using the low-latency **IMAP IDLE** protocol and streams new emails to the browser in real time via **WebSockets (Socket.io)** — no manual refreshing required.
-* **🔑 Smart OTP & Link Extractor:** Built-in heuristic Regex engine automatically scans email headers and bodies, extracting 4 to 8-digit verification codes and activation links with 1-click clipboard copy.
-* **🔄 Multi-Account Pool:** Scale from 1 to 50+ base accounts seamlessly. GhostMail rotates accounts dynamically to prevent rate limits and ensure balanced load.
-* **🎨 Modern Glassmorphism UI:** Titanium dark theme, audible notification chimes (Web Audio API), live stream status indicator, and instant address generation.
-* **🔒 Privacy-First & Self-Hosted:** No external third-party servers tracking your verification codes. Your data stays 100% in your own server.
+</div>
 
 ---
 
-## 🏗️ Architecture
+## ✨ ¿Qué es GhostMail Core?
 
-```mermaid
-flowchart TD
-    User["Client / Browser"] <-->|"WebSockets (Socket.io)"| Server["Node.js / Express Server"]
-    Server <-->|"IMAP IDLE (Persistent SSL)"| Gmail["Google Mail Servers (imap.gmail.com)"]
-    Gmail <-->|"Delivers OTP / Mail"| TargetSite["Third-Party Website / Service"]
-    
-    subgraph Engine ["GhostMail Core Backend"]
-        AliasGen["Dot-Matrix Alias Generator"]
-        Parser["Mailparser & Heuristic OTP Extractor"]
-        Pool["Multi-Account Worker Pool"]
-    end
+GhostMail Core aprovecha el **truco de puntos de Gmail** para generar miles de direcciones de correo únicas a partir de una sola cuenta. Todos los correos enviados a cualquier variante llegan a la misma bandeja — y GhostMail los muestra en tiempo real, separados por alias.
 
-    Server --- Engine
+> **Ejemplo:** Si tu cuenta es `usuario@gmail.com`, entonces `u.suario@gmail.com`, `us.uario@gmail.com`, `usuario+trabajo@gmail.com` etc. son todos alias válidos que llegan a tu bandeja original.
+
+### ¿Por qué usarlo?
+
+- 🔒 **Privacidad** — Regístrate en servicios sin exponer tu correo real
+- 🚀 **Tiempo real** — Los correos aparecen al instante vía IMAP IDLE + WebSocket
+- 🔑 **OTP automático** — Detecta y resalta códigos de verificación automáticamente
+- 🆓 **100% gratuito** — Sin APIs de pago, sin límites externos, todo corre en tu máquina
+- 🌐 **Open source** — MIT License, haz lo que quieras con él
+
+---
+
+## 🧮 ¿Cuántos alias genera?
+
+| Cuenta | Caracteres | Alias por puntos | + googlemail.com | Total |
+|--------|-----------|-----------------|-------------------|-------|
+| `usuario@gmail.com` | 7 | 2⁶ = 64 | ×2 | **128** |
+| `miusuario@gmail.com` | 10 | 2⁹ = 512 | ×2 | **1,024** |
+| `pruebamb987654@gmail.com` | 13 | 2¹² = 4,096 | ×2 | **8,192** |
+
+Además de los alias `+etiqueta` (prácticamente infinitos).
+
+---
+
+## 🖥️ Demo
+
+```
+Alias activo:  p.r.uebamb987654@gmail.com
+
+┌─────────────────────────────────────────────────────┐
+│  📧  OpusClip <noreply@opus.pro>          12:34 PM  │
+│  Tu código de verificación                           │
+│  ┌──────────────────────────────────┐               │
+│  │  🔑 CÓDIGO DETECTADO:  213519   │  [Copiar]      │
+│  └──────────────────────────────────┘               │
+│  ┌──────────────────────────────────────────────┐   │
+│  │  <Correo HTML renderizado completo aquí>     │   │
+│  └──────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Quick Start (Local Setup)
+## 🚀 Instalación rápida
 
-### 1. Prerequisites
-* **Node.js** v18+ and **npm** installed.
-* At least **one Gmail account** with **2-Step Verification** enabled and an **App Password**.
+### Requisitos
+- [Node.js 18+](https://nodejs.org/en/download)
+- Una o más cuentas Gmail con **Verificación en 2 pasos activada**
 
-### 2. Installation
+### 1. Clona el repositorio
+
 ```bash
-# Clone the repository
-git clone https://github.com/maykelcb/temp-gmail-hub.git
-cd temp-gmail-hub
+git clone https://github.com/maykelcb/ghostmail-core.git
+cd ghostmail-core
+```
 
-# Install dependencies
+### 2. Instala dependencias
+
+```bash
 npm install
 ```
 
-### 3. Configure `.env`
-Create a `.env` file based on `.env.example`:
+### 3. Configura tus cuentas Gmail
+
+```bash
+cp .env.example .env
+```
+
+Edita `.env` con tus datos:
+
 ```env
 PORT=3000
-
-# JSON Array of accounts (supports 1, 5, 10 or more)
-GMAIL_ACCOUNTS=[{"user":"your_email@gmail.com","pass":"your_16_character_app_password"}]
+GMAIL_ACCOUNTS=[
+  {
+    "user": "tucuenta@gmail.com",
+    "password": "xxxx xxxx xxxx xxxx"
+  }
+]
 ```
 
-> **How to get a Google App Password:**
-> 1. Go to [Google Account Security](https://myaccount.google.com/security).
-> 2. Enable **2-Step Verification**.
-> 3. Search for **"App Passwords"** (or visit [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)).
-> 4. Create a new password named `GhostMail` and paste the 16-character code into your `.env`.
+> **¿Qué es esa contraseña?** No es tu contraseña normal de Gmail — es una **contraseña de aplicación**. Mira cómo obtenerla abajo ↓
 
-### 4. Run the Server
+### 4. Inicia el servidor
+
 ```bash
-npm start
+node server.js
 ```
-Open your browser and navigate to:
-👉 **`http://localhost:3000`**
+
+Abre tu navegador en **http://localhost:3000** 🎉
 
 ---
 
-## 📡 REST API Reference
+## 🔑 Cómo obtener una Contraseña de Aplicación de Gmail
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/status` | Returns pool health, active accounts, combinations, and uptime. |
-| `GET` | `/api/generate?mode=dots` | Generates a new random alias (`dots`, `googlemail`, or `plus`). |
-| `GET` | `/api/messages` | Retrieves stored recent messages. |
-| `DELETE` | `/api/messages` | Clears local memory inbox. |
+Las contraseñas de aplicación son códigos de 16 caracteres que permiten que apps externas accedan a tu Gmail de forma segura sin usar tu contraseña real.
+
+1. Ve a [myaccount.google.com/security](https://myaccount.google.com/security)
+2. Activa la **Verificación en 2 pasos** (obligatorio)
+3. Busca **"Contraseñas de aplicaciones"** en el mismo menú de seguridad
+4. Selecciona `Correo` → `Otro (nombre personalizado)` → escribe `GhostMail`
+5. Copia el código de 16 caracteres generado (con o sin espacios, funciona igual)
 
 ---
 
-## 📜 License
-Distributed under the **MIT License**. Free for personal and community use.
+## ➕ Agregar más cuentas Gmail
 
-Developed with passion by **Mayquel Bernaola**.
+Edita `GMAIL_ACCOUNTS` en `.env` con un array JSON:
+
+```env
+GMAIL_ACCOUNTS=[
+  {"user": "cuenta1@gmail.com", "password": "xxxx xxxx xxxx xxxx"},
+  {"user": "cuenta2@gmail.com", "password": "xxxx xxxx xxxx xxxx"},
+  {"user": "cuenta3@googlemail.com", "password": "xxxx xxxx xxxx xxxx"}
+]
+```
+
+Cada cuenta adicional multiplica el número de alias disponibles. Con 5 cuentas de 13 caracteres → **+40,000 alias únicos**.
+
+---
+
+## 📡 API REST
+
+El servidor expone una API simple:
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `GET` | `/api/status` | Estado del servidor y estadísticas |
+| `GET` | `/api/generate?mode=dots` | Genera un alias aleatorio |
+| `GET` | `/api/messages` | Todos los mensajes en memoria |
+| `DELETE` | `/api/messages` | Limpia la bandeja en memoria |
+
+### Modos de generación (`mode`)
+
+| Modo | Ejemplo |
+|------|---------|
+| `dots` | `u.suar.io@gmail.com` |
+| `googlemail` | `usuario@googlemail.com` |
+| `plus` | `usuario+a7x2k@gmail.com` |
+
+---
+
+## 🛠️ Stack técnico
+
+| Componente | Tecnología |
+|-----------|-----------|
+| Backend | Node.js + Express |
+| WebSocket | Socket.io |
+| IMAP push | imapflow (IDLE) |
+| Parsing de correos | mailparser |
+| Frontend | HTML + CSS + JS vanilla |
+| Estilos | Dark UI glassmorphism |
+
+---
+
+## 📁 Estructura del proyecto
+
+```
+ghostmail-core/
+├── server.js           # Servidor Express + Socket.io + lógica principal
+├── imapWorker.js       # Pool de conexiones IMAP IDLE con auto-reconexión
+├── aliasGenerator.js   # Motor de generación de alias (puntos, googlemail, plus)
+├── otpExtractor.js     # Extractor heurístico de códigos OTP y links de acción
+├── public/
+│   ├── index.html      # Interfaz de usuario
+│   ├── style.css       # Estilos dark UI
+│   └── app.js          # Controlador frontend + cliente WebSocket
+├── .env.example        # Plantilla de configuración
+├── .gitignore          # Excluye .env y node_modules
+└── package.json
+```
+
+---
+
+## ⚠️ Aviso importante
+
+- **Solo usa cuentas que sean tuyas** — No uses esto para acceder a correos ajenos
+- El archivo `.env` contiene tus credenciales y está en `.gitignore` — nunca lo compartas ni lo subas a Git
+- Este proyecto es para uso personal, privacidad y desarrollo — úsalo de forma responsable
+
+---
+
+## 🤝 Contribuir
+
+¡Las contribuciones son bienvenidas! Si tienes ideas para mejorar el proyecto:
+
+1. Haz fork del repositorio
+2. Crea una rama: `git checkout -b feature/mi-mejora`
+3. Haz tus cambios y un commit: `git commit -m "Agrega mi mejora"`
+4. Push: `git push origin feature/mi-mejora`
+5. Abre un Pull Request
+
+### Ideas para contribuir
+- [ ] Soporte para Outlook/Hotmail aliases
+- [ ] Exportar mensajes a JSON/CSV
+- [ ] Notificaciones del sistema (desktop notifications)
+- [ ] Deploy con Docker
+- [ ] Interfaz para gestionar múltiples alias simultáneamente
+
+---
+
+## 📄 Licencia
+
+MIT © [Maykel Bernaola](https://github.com/maykelcb) — Libre para usar, modificar y distribuir.
+
+---
+
+<div align="center">
+
+Hecho con ❤️ para la comunidad open source
+
+⭐ Si te fue útil, dale una estrella al repo
+
+</div>
