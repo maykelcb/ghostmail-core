@@ -9,13 +9,17 @@ export function normalizeEmail(email) {
   const [localPart, domainPart] = cleaned.split('@');
   if (!domainPart) return cleaned;
 
-  // Solo normalizar si es dominio de Google
+  // Normalizar si es dominio de Google
   if (domainPart === 'gmail.com' || domainPart === 'googlemail.com') {
-    // Quitar todo lo que va después del signo '+'
     const noPlus = localPart.split('+')[0];
-    // Quitar todos los puntos
     const noDots = noPlus.replace(/\./g, '');
     return `${noDots}@gmail.com`;
+  }
+
+  // Normalizar si es Outlook
+  if (domainPart.includes('outlook.') || domainPart.includes('hotmail.')) {
+    const noPlus = localPart.split('+')[0];
+    return `${noPlus}@${domainPart}`;
   }
 
   return cleaned;
@@ -27,8 +31,7 @@ export function normalizeEmail(email) {
 export function calculateCombinations(username) {
   const cleanUser = username.replace(/\./g, '').split('+')[0];
   const gaps = cleanUser.length - 1;
-  const dotCombos = Math.pow(2, gaps);
-  // Multiplicado por 2 por el soporte de @googlemail.com
+  const dotCombos = Math.pow(2, Math.max(0, gaps));
   return {
     dotCombinations: dotCombos,
     totalWithGooglemail: dotCombos * 2
@@ -43,22 +46,18 @@ export function generateDotAlias(username, options = {}) {
   const n = cleanUser.length;
   if (n <= 1) return cleanUser;
 
-  // Decidir dónde colocar puntos aleatoriamente (al menos 1 punto garantizado si requested)
   const gaps = n - 1;
-  // Elegir una máscara aleatoria entre 1 y (2^gaps - 1)
   const maxMask = Math.pow(2, gaps) - 1;
   const mask = Math.floor(Math.random() * maxMask) + 1;
 
   let result = cleanUser[0];
   for (let i = 0; i < gaps; i++) {
-    // Si el bit i está activo, insertamos un punto
     if ((mask >> i) & 1) {
       result += '.';
     }
     result += cleanUser[i + 1];
   }
 
-  // Título de dominio (@gmail.com o @googlemail.com)
   const useGooglemail = options.useGooglemail ?? (Math.random() > 0.5);
   const domain = useGooglemail ? 'googlemail.com' : 'gmail.com';
 
@@ -68,10 +67,10 @@ export function generateDotAlias(username, options = {}) {
 /**
  * Genera un alias con '+' (Plus Addressing).
  */
-export function generatePlusAlias(username, customTag = null) {
+export function generatePlusAlias(username, domain = 'gmail.com', customTag = null) {
   const cleanUser = username.replace(/\./g, '').split('+')[0];
   const tag = customTag || Math.random().toString(36).substring(2, 7);
-  return `${cleanUser}+${tag}@gmail.com`;
+  return `${cleanUser}+${tag}@${domain}`;
 }
 
 /**
@@ -79,16 +78,34 @@ export function generatePlusAlias(username, customTag = null) {
  */
 export function generateFromPool(accounts, mode = 'dots', customOptions = {}) {
   if (!accounts || accounts.length === 0) {
-    throw new Error('No hay cuentas configuradas en el pool.');
+    throw new Error('No hay cuentas configuradas en el servidor.');
   }
 
-  // Elegir una cuenta base aleatoria del pool
-  const baseAccount = accounts[Math.floor(Math.random() * accounts.length)];
+  // Si el usuario pidió Outlook
+  if (mode === 'outlook') {
+    const outlookAccounts = accounts.filter(a => a.user.includes('@outlook.') || a.user.includes('@hotmail.'));
+    if (!outlookAccounts.length) {
+      throw new Error('No hay cuentas de Outlook configuradas en el servidor. Por favor configura una cuenta @outlook.com en .env.');
+    }
+    const baseAccount = outlookAccounts[Math.floor(Math.random() * outlookAccounts.length)];
+    const [userPart, domainPart] = baseAccount.user.split('@');
+    const alias = generatePlusAlias(userPart, domainPart, customOptions.tag);
+    return {
+      alias,
+      baseAccount: baseAccount.user,
+      normalized: normalizeEmail(alias)
+    };
+  }
+
+  // Cuentas de Google (Gmail / Googlemail)
+  const googleAccounts = accounts.filter(a => !a.user.includes('@outlook.') && !a.user.includes('@hotmail.'));
+  const pool = googleAccounts.length > 0 ? googleAccounts : accounts;
+  const baseAccount = pool[Math.floor(Math.random() * pool.length)];
   const cleanUsername = baseAccount.user.split('@')[0];
 
   let generated = '';
   if (mode === 'plus') {
-    generated = generatePlusAlias(cleanUsername, customOptions.tag);
+    generated = generatePlusAlias(cleanUsername, 'gmail.com', customOptions.tag);
   } else if (mode === 'googlemail') {
     generated = generateDotAlias(cleanUsername, { useGooglemail: true });
   } else {
@@ -100,5 +117,16 @@ export function generateFromPool(accounts, mode = 'dots', customOptions = {}) {
     alias: generated,
     baseAccount: baseAccount.user,
     normalized: normalizeEmail(generated)
+  };
+}
+
+/**
+ * Función unificada para server.js
+ */
+export function generateAlias(accounts, mode = 'dots') {
+  const result = generateFromPool(accounts, mode);
+  return {
+    email: result.alias,
+    baseAccount: result.baseAccount
   };
 }

@@ -1,187 +1,188 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GhostMail Core — Real-Time Disposable Gmail & OTP Stream Hub</title>
-  <meta name="description" content="Servidor y generador de correos temporales reales de Gmail con recepción de códigos de verificación OTP en tiempo real por IMAP.">
-  
-  <!-- Google Fonts & FontAwesome -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GhostMail Core</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <!-- Ambient Glow Background -->
-  <div class="ambient-glow glow-1"></div>
-  <div class="ambient-glow glow-2"></div>
-
-  <!-- Header -->
-  <header class="app-header">
-    <div class="header-container">
-      <div class="brand-group">
-        <div class="brand-logo">
-          <i class="fa-solid fa-ghost"></i>
-        </div>
-        <div class="brand-text">
-          <h1 class="brand-title">GHOSTMAIL <span class="badge-core">CORE</span></h1>
-          <p class="brand-subtitle">Real-time Disposable Gmail & OTP Stream Engine</p>
-        </div>
-      </div>
-
-      <div class="header-controls">
-        <div class="status-indicator" title="Conexión IMAP Activa">
-          <span class="pulse-dot"></span>
-          <span class="status-text" id="imapStatusText">IMAP: ESCUCHANDO</span>
-        </div>
-
-        <div class="stats-pill" id="poolStatsPill" title="Cuentas activas en el pool">
-          <i class="fa-solid fa-server"></i>
-          <span id="statsAccountCount">1 Cuenta</span>
-          <span class="sep">•</span>
-          <span id="statsComboCount">16,384+ Alias</span>
-        </div>
-
-        <button class="icon-toggle-btn" id="audioToggle" title="Sonido al recibir correo">
-          <i class="fa-solid fa-volume-high" id="audioIcon"></i>
-        </button>
-
-        <button class="clear-inbox-btn" id="clearInboxBtn" title="Vaciar bandeja de entrada">
-          <i class="fa-regular fa-trash-can"></i>
-          <span>Limpiar</span>
-        </button>
+<!-- ══════════════ HEADER ══════════════ -->
+<header class="header">
+  <div class="header-container">
+    <div class="logo-block">
+      <div class="logo-icon"><i class="fa-solid fa-ghost"></i></div>
+      <div>
+        <h1 class="logo-title">GhostMail<span class="logo-accent"> Core</span></h1>
+        <p class="logo-sub">Correo temporal · Tiempo real · Sin registro</p>
       </div>
     </div>
-  </header>
-
-  <!-- Main Workspace -->
-  <main class="main-layout">
-    
-    <!-- Hero / Generator Section -->
-    <section class="generator-card">
-      <div class="generator-header">
-        <div class="mode-selector" role="tablist">
-          <button class="mode-pill active" data-mode="dots">
-            <i class="fa-solid fa-ellipsis"></i>
-            <span>Puntos Gmail (.)</span>
-          </button>
-          <button class="mode-pill" data-mode="googlemail">
-            <i class="fa-brands fa-google"></i>
-            <span>Googlemail (.com)</span>
-          </button>
-          <button class="mode-pill" data-mode="plus">
-            <i class="fa-solid fa-plus"></i>
-            <span>Etiqueta Plus (+)</span>
-          </button>
-        </div>
-
-        <span class="pool-tag">GMAIL OFICIAL // 100% COMPATIBLE</span>
-      </div>
-
-      <div class="address-display-box">
-        <div class="address-prefix-label">TU CORREO TEMPORAL ACTIVO:</div>
-        <div class="address-value-row">
-          <span class="address-text" id="currentEmailDisplay">Generando...</span>
-          <div class="address-actions">
-            <button class="btn-copy-main" id="btnCopyEmail" title="Copiar al portapapeles">
-              <i class="fa-regular fa-copy"></i>
-              <span id="copyBtnText">COPIAR</span>
-            </button>
-            <button class="btn-refresh-main" id="btnGenerateNew" title="Generar otro alias diferente">
-              <i class="fa-solid fa-arrows-rotate" id="refreshIcon"></i>
-              <span>NUEVO</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="generator-footer">
-        <div class="instruction-tip">
-          <i class="fa-solid fa-lightbulb"></i>
-          <span>Usa este correo para registrarte en cualquier plataforma. En cuanto te envíen el código OTP o enlace de confirmación, <strong>aparecerá abajo automáticamente en menos de 3 segundos</strong> sin recargar.</span>
-        </div>
-        <div class="active-base-info" id="activeBaseInfo">
-          Base: <span id="baseAccountDisplay">cargando...</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Real-Time Stream Section -->
-    <section class="inbox-section">
-      <div class="inbox-header-bar">
-        <div class="inbox-title-group">
-          <h2 class="inbox-title">
-            <i class="fa-regular fa-envelope-open"></i>
-            Bandeja de Entrada en Tiempo Real
-          </h2>
-          <span class="message-counter-badge" id="messageCountBadge">0 mensajes</span>
-        </div>
-
-      </div>
-
-      <!-- Live Messages Feed -->
-      <div class="messages-container" id="messagesFeed">
-        <!-- Empty State Default -->
-        <div class="empty-inbox-state" id="emptyState">
-          <div class="radar-circle">
-            <i class="fa-solid fa-satellite-dish"></i>
-          </div>
-          <h3 class="empty-title">Esperando mensajes entrantes...</h3>
-          <p class="empty-desc">
-            Pega el correo de arriba en la web donde te estás registrando y presiona enviar código.<br>
-            El mensaje y el código OTP aparecerán aquí de forma instantánea vía WebSocket.
-          </p>
-          <div class="empty-tags">
-            <span><i class="fa-solid fa-bolt"></i> Detección automática de OTP</span>
-            <span><i class="fa-solid fa-link"></i> Enlaces de activación directa</span>
-            <span><i class="fa-solid fa-shield-halved"></i> 100% Cuentas Oficiales</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- Message Detail Modal -->
-  <div class="modal-overlay" id="messageModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div class="modal-meta">
-          <span class="modal-from" id="modalFrom"></span>
-          <span class="modal-date" id="modalDate"></span>
-        </div>
-        <button class="modal-close-btn" id="modalCloseBtn">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      <h3 class="modal-subject" id="modalSubject"></h3>
-      <div class="modal-to-pill" id="modalTo"></div>
-
-      <!-- OTP Banner in Modal if exists -->
-      <div class="modal-otp-card" id="modalOtpCard" style="display: none;">
-        <span class="otp-card-label">CÓDIGO DE VERIFICACIÓN DETECTADO</span>
-        <div class="otp-card-row">
-          <span class="otp-huge-number" id="modalOtpValue">------</span>
-          <button class="btn-copy-otp" id="modalBtnCopyOtp">
-            <i class="fa-regular fa-copy"></i>
-            <span>Copiar Código</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="modal-body-content" id="modalBody"></div>
+    <div class="header-actions">
+      <button class="btn-icon" id="audioToggle" title="Sonido">
+        <i class="fa-solid fa-volume-high" id="audioIcon"></i>
+      </button>
+      <a href="https://github.com/maykelcb/ghostmail-core" target="_blank" class="btn-icon" title="GitHub">
+        <i class="fa-brands fa-github"></i>
+      </a>
     </div>
   </div>
+</header>
 
-  <!-- Toast Container -->
-  <div class="toast-container" id="toastContainer"></div>
+<!-- ══════════════ LAYOUT ══════════════ -->
+<div class="layout">
 
-  <!-- Socket.io & App Script -->
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js"></script>
+  <!-- ── SIDEBAR: Historial ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span><i class="fa-solid fa-clock-rotate-left"></i> Historial</span>
+      <span class="alias-count-badge" id="aliasCountBadge">0</span>
+    </div>
+    <div class="sidebar-list" id="aliasList">
+      <div class="sidebar-empty">
+        <i class="fa-solid fa-inbox"></i>
+        <p>Sin alias generados</p>
+      </div>
+    </div>
+    <button class="btn-create-new" id="btnCreateNew">
+      <i class="fa-solid fa-plus"></i>
+      Crear nuevo correo
+    </button>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main-panel">
+
+    <!-- Pantalla de bienvenida (cuando no hay alias activo) -->
+    <div class="welcome-screen" id="welcomeScreen">
+      <div class="welcome-icon"><i class="fa-solid fa-ghost"></i></div>
+      <h2 class="welcome-title">Bienvenido a GhostMail</h2>
+      <p class="welcome-desc">Genera un correo temporal al instante. Sin registro, sin límites, sin rastreo.</p>
+      <button class="btn-create-big" id="btnCreateBig">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        Crear mi primer correo
+      </button>
+      <div class="welcome-features">
+        <div class="feature-chip"><i class="fa-solid fa-bolt"></i> Tiempo real</div>
+        <div class="feature-chip"><i class="fa-solid fa-key"></i> OTP automático</div>
+        <div class="feature-chip"><i class="fa-solid fa-shield-halved"></i> Privado</div>
+        <div class="feature-chip"><i class="fa-solid fa-infinity"></i> Ilimitado</div>
+      </div>
+    </div>
+
+    <!-- Vista del alias activo + bandeja -->
+    <div class="alias-view" id="aliasView" style="display:none;">
+
+      <!-- Tarjeta del alias activo -->
+      <div class="alias-card">
+        <div class="alias-card-top">
+          <div class="alias-provider-badge" id="aliasProviderBadge">
+            <i class="fa-brands fa-google"></i> Gmail
+          </div>
+          <div class="alias-card-actions">
+            <button class="btn-delete-alias" id="btnDeleteAlias" title="Eliminar este correo">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        <div class="alias-email-display" id="aliasEmailDisplay">—</div>
+        <div class="alias-card-bottom">
+          <button class="btn-copy-alias" id="btnCopyAlias">
+            <i class="fa-regular fa-copy"></i>
+            <span id="copyBtnText">COPIAR</span>
+          </button>
+          <div class="alias-live-indicator">
+            <span class="live-dot"></span>
+            <span>En vivo</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bandeja -->
+      <div class="inbox-section">
+        <div class="inbox-header">
+          <div class="inbox-title">
+            <i class="fa-solid fa-inbox"></i>
+            <span>Bandeja de entrada</span>
+            <span class="msg-count-badge" id="messageCountBadge">0</span>
+          </div>
+        </div>
+
+        <div id="messagesFeed"></div>
+
+        <div class="empty-inbox" id="emptyState">
+          <i class="fa-solid fa-envelope-open-text"></i>
+          <p>Esperando correos...</p>
+          <small>Usa este alias para registrarte en cualquier servicio</small>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ══════════════ MODAL: CREAR ALIAS ══════════════ -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal-box">
+    <button class="modal-close" id="modalClose"><i class="fa-solid fa-xmark"></i></button>
+    <div class="modal-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+    <h2 class="modal-title">Crear correo temporal</h2>
+    <p class="modal-sub">Elige el proveedor y el estilo de tu alias</p>
+
+    <div class="provider-grid">
+      <label class="provider-card" data-mode="dots">
+        <input type="radio" name="provider" value="dots" checked />
+        <div class="provider-logo gmail"><i class="fa-brands fa-google"></i></div>
+        <div class="provider-name">Gmail</div>
+        <div class="provider-desc">user.name@gmail.com</div>
+      </label>
+      <label class="provider-card" data-mode="googlemail">
+        <input type="radio" name="provider" value="googlemail" />
+        <div class="provider-logo googlemail"><i class="fa-brands fa-google"></i></div>
+        <div class="provider-name">Googlemail</div>
+        <div class="provider-desc">user.name@googlemail.com</div>
+      </label>
+      <label class="provider-card" data-mode="plus">
+        <input type="radio" name="provider" value="plus" />
+        <div class="provider-logo plus"><i class="fa-solid fa-plus"></i></div>
+        <div class="provider-name">Gmail +Tag</div>
+        <div class="provider-desc">user+tag@gmail.com</div>
+      </label>
+      <label class="provider-card" data-mode="outlook">
+        <input type="radio" name="provider" value="outlook" />
+        <div class="provider-logo outlook"><i class="fa-brands fa-microsoft"></i></div>
+        <div class="provider-name">Outlook</div>
+        <div class="provider-desc">user+tag@outlook.com</div>
+      </label>
+    </div>
+
+    <button class="btn-generate-modal" id="btnGenerateModal">
+      <i class="fa-solid fa-bolt"></i>
+      Generar alias aleatorio
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════ MODAL: CONFIRMAR ELIMINAR ══════════════ -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-box modal-box-sm">
+    <div class="confirm-icon danger"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <h2 class="modal-title" id="confirmTitle">¿Eliminar?</h2>
+    <p class="modal-sub" id="confirmDesc">Esta acción no se puede deshacer.</p>
+    <div class="confirm-actions">
+      <button class="btn-cancel" id="confirmCancel">Cancelar</button>
+      <button class="btn-danger-confirm" id="confirmOk">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TOAST ══════════════ -->
+<div id="toastContainer" class="toast-container"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

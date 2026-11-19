@@ -6,11 +6,17 @@ import { normalizeEmail } from './aliasGenerator.js';
 
 function extractAddressString(val) {
   if (!val) return '';
-  if (typeof val === 'string') return val;
-  if (typeof val.text === 'string') return val.text;
-  if (Array.isArray(val.value) && val.value[0]?.address) return val.value[0].address;
-  if (typeof val.value === 'string') return val.value;
-  return String(val);
+  let str = '';
+  if (typeof val === 'string') str = val;
+  else if (typeof val.text === 'string') str = val.text;
+  else if (Array.isArray(val.value) && val.value[0]?.address) return val.value[0].address.toLowerCase();
+  else if (typeof val.value === 'string') str = val.value;
+  else str = String(val);
+
+  // Extraer dirección entre < > o patrón email
+  const match = str.match(/<([^>]+)>/) || str.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+  if (match) return match[1].trim().toLowerCase();
+  return str.trim().toLowerCase();
 }
 
 export class ImapWorkerPool extends EventEmitter {
@@ -34,13 +40,16 @@ export class ImapWorkerPool extends EventEmitter {
     if (!this.isRunning) return;
 
     const email = account.user;
+    const isOutlook = email.includes('@outlook.') || email.includes('@hotmail.');
+    const host = isOutlook ? 'outlook.office365.com' : 'imap.gmail.com';
+
     const client = new ImapFlow({
-      host: 'imap.gmail.com',
+      host,
       port: 993,
       secure: true,
       auth: {
         user: account.user,
-        pass: account.pass
+        pass: account.pass || account.password
       },
       logger: false,
       emitLogs: false
@@ -49,7 +58,7 @@ export class ImapWorkerPool extends EventEmitter {
     this.clients.set(email, client);
 
     try {
-      console.log(`[IMAP] Conectando a ${email}...`);
+      console.log(`[IMAP] Conectando a ${email} (${host})...`);
       await client.connect();
       console.log(`[IMAP] Conectado exitosamente a ${email}`);
       this.emit('accountConnected', { user: email });
@@ -76,7 +85,7 @@ export class ImapWorkerPool extends EventEmitter {
         const status = await client.status('INBOX', { messages: true });
         if (status && status.messages > 0) {
           const startSeq = Math.max(1, status.messages - 4);
-          for await (const msg of client.fetch(`${startSeq}:*`, { source: true, envelope: true })) {
+          for await (const msg of client.fetch(`${startSeq}:*`, { source: true, envelope: true, uid: true })) {
             await this.parseAndEmitMessage(msg, account);
           }
         }
@@ -85,7 +94,7 @@ export class ImapWorkerPool extends EventEmitter {
       }
 
       // Evento de nuevo mensaje
-      client.on('exists', async data => {
+      client.on('exists', async () => {
         try {
           await this.processLatestMessage(client, account);
         } catch (e) {
@@ -113,7 +122,7 @@ export class ImapWorkerPool extends EventEmitter {
       const deliveredToRaw = parsed.headers.get('delivered-to');
       const deliveredTo = extractAddressString(deliveredToRaw);
       const recipientTo = extractAddressString(parsed.to);
-      const fullRecipient = deliveredTo || recipientTo || account.user;
+      const fullRecipient = (deliveredTo || recipientTo || account.user).toLowerCase();
 
       const subject = parsed.subject || '(Sin Asunto)';
       const fromText = parsed.from?.text || 'Desconocido';
@@ -124,6 +133,7 @@ export class ImapWorkerPool extends EventEmitter {
 
       const emailEvent = {
         id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        uid: message.uid ? String(message.uid) : null,
         from: fromText,
         to: fullRecipient,
         normalizedTo: normalizeEmail(fullRecipient),
@@ -146,8 +156,7 @@ export class ImapWorkerPool extends EventEmitter {
 
   async processLatestMessage(client, account) {
     try {
-      // Buscar el último mensaje no leído o más reciente
-      const message = await client.fetchOne('*', { source: true, envelope: true });
+      const message = await client.fetchOne('*', { source: true, envelope: true, uid: true });
       await this.parseAndEmitMessage(message, account);
     } catch (err) {
       console.error(`[IMAP] Error al obtener último mensaje:`, err.message);
