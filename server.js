@@ -195,6 +195,54 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// ─── Helpers de Validación de Seguridad y Correo ─────────────────────────────
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  'mailinator.com', 'yopmail.com', '10minutemail.com', 'tempmail.com', 'guerrillamail.com',
+  'throwawaymail.com', 'sharklasers.com', 'dispostable.com', 'getnada.com', 'mohmal.com',
+  'crazymailing.com', 'fakeinbox.com', 'mytemp.email', 'temp-mail.org', 'fakemailgenerator.com',
+  'emailondeck.com', 'generator.email', 'inboxkitten.com', 'burnermail.io', 'dropmail.me',
+  'tempail.com', 'trashmail.com', 'trashmail.net', 'maildrop.cc', 'grr.la', 'inboxalias.com',
+  'armyspy.com', 'cuvox.de', 'dayrep.com', 'fleckens.hu', 'gustr.com', 'jourrapide.com',
+  'rhyta.com', 'superrito.com', 'teleworm.us', 'tinypm.com', 'chacuo.net', 'binkmail.com',
+  'bobmail.info', 'chammy.info', 'devnullmail.com', 'letthemeatspam.com', 'mailinater.com',
+  'mailinator2.com', 'notmailinator.com', 'reallymymail.com', 'reconmail.com', 'safetymail.info',
+  'sendspamhere.com', 'sogetthis.com', 'spamavert.com', 'spamfree24.org', 'suremail.info',
+  'thisisnotmyrealemail.com', 'zippymail.info', '014.fr', 'emailfake.com', 'mohmal.im', 'mohmal.in'
+]);
+
+function isDisposableEmail(email) {
+  if (!email || !email.includes('@')) return false;
+  const parts = email.toLowerCase().split('@');
+  const domain = parts[1]?.trim();
+  if (!domain) return false;
+
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) return true;
+
+  const suspiciousKeywords = ['tempmail', '10minute', 'guerrilla', 'throwaway', 'dispostable', 'fakemail', 'burnermail', 'trashmail', 'mytemp', 'sharklaser', 'yopmail', 'mailinator'];
+  if (suspiciousKeywords.some(keyword => domain.includes(keyword))) {
+    return true;
+  }
+
+  for (const acc of accounts) {
+    const accDomain = acc.user.split('@')[1]?.toLowerCase();
+    if (accDomain && domain === accDomain) {
+      const baseUser = acc.user.split('@')[0].toLowerCase().replace(/\./g, '');
+      const testUser = parts[0].toLowerCase().replace(/\./g, '').split('+')[0];
+      if (testUser === baseUser) return true;
+    }
+  }
+
+  return false;
+}
+
+function isStrongPassword(pass) {
+  if (!pass || pass.length < 8) return false;
+  const hasUpper = /[A-Z]/.test(pass);
+  const hasNumber = /[0-9]/.test(pass);
+  const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(pass);
+  return hasUpper && hasNumber && hasSymbol;
+}
+
 // ─── API: Autenticación ──────────────────────────────────────────────────────
 app.get('/api/auth/me', (req, res) => {
   const maxLimit = req.user ? 10 : 5;
@@ -210,56 +258,84 @@ app.get('/api/auth/me', (req, res) => {
   });
 });
 
-// Registro con validaciones estrictas de seguridad
+// Registro con validaciones estrictas de seguridad (Punto 2, 6, 8)
 app.post('/api/auth/register', async (req, res) => {
   const { name, email, username, password, confirmPassword, turnstileToken } = req.body;
 
-  // 1. Validación de Nombre Completo (solo letras y espacios, sin números ni símbolos)
+  // 1. Validación de Nombre (solo letras y espacios, sin números ni símbolos)
   const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]{2,50}$/;
   if (!name || !nameRegex.test(name.trim())) {
-    return res.status(400).json({ error: 'El nombre completo solo debe contener letras y espacios (sin números ni símbolos).' });
-  }
-
-  // 2. Validación de Correo Oficial
-  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  if (!email || !emailRegex.test(email.trim())) {
-    return res.status(400).json({ error: 'Por favor ingresa un correo electrónico verídico y válido.' });
-  }
-
-  // 3. Validación de Usuario (debe empezar con letra, letras/números/guion bajo, NO solo números)
-  const usernameRegex = /^[a-zA-Z][a-zA-Z0-9_]{2,19}$/;
-  if (!username || !usernameRegex.test(username.trim())) {
     return res.status(400).json({
-      error: 'El usuario debe comenzar con una letra y tener entre 3 y 20 caracteres (solo letras, números y _). No puede ser solo números ni contener símbolos extraños.'
+      error: 'El nombre solo debe contener letras y espacios (sin números ni símbolos).',
+      code: 'NAME_INVALID'
     });
   }
 
-  // 4. Validación de Contraseña
-  if (!password || password.length < 4) {
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres.' });
+  // 2. Validación de Correo (prohibir desechables / temporales)
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!email || !emailRegex.test(email.trim())) {
+    return res.status(400).json({
+      error: 'Por favor ingresa un correo electrónico válido.',
+      code: 'EMAIL_INVALID'
+    });
+  }
+  if (isDisposableEmail(email.trim())) {
+    return res.status(400).json({
+      error: 'No se permiten correos temporales o desechables. Por favor usa un proveedor permanente (Gmail, Outlook, Yahoo, iCloud, etc.).',
+      code: 'DISPOSABLE_EMAIL'
+    });
+  }
+
+  // 3. Validación de Usuario (inicia con letra, 3-20 caracteres, no solo números)
+  const usernameRegex = /^[a-zA-Z][a-zA-Z0-9_]{2,19}$/;
+  if (!username || !usernameRegex.test(username.trim())) {
+    return res.status(400).json({
+      error: 'El usuario debe comenzar con una letra y tener entre 3 y 20 caracteres (solo letras, números y _). No puede ser solo números ni contener símbolos extraños.',
+      code: 'USERNAME_INVALID'
+    });
+  }
+
+  // 4. Validación de Contraseña Segura (mínimo 8 caracteres, mayúscula, número y símbolo)
+  if (!isStrongPassword(password)) {
+    return res.status(400).json({
+      error: 'La contraseña debe tener al menos 8 caracteres e incluir al menos una mayúscula, un número y un símbolo especial (!@#$%...).',
+      code: 'WEAK_PASSWORD'
+    });
   }
   if (password !== confirmPassword) {
-    return res.status(400).json({ error: 'Las contraseñas no coinciden.' });
+    return res.status(400).json({
+      error: 'Las contraseñas no coinciden.',
+      code: 'PASSWORD_MISMATCH'
+    });
   }
 
   // 5. Cloudflare Turnstile
   const isHuman = await verifyTurnstile(turnstileToken, req.ip);
   if (!isHuman) {
-    return res.status(403).json({ error: 'Fallo en la verificación antibot de Cloudflare. Por favor completa el captcha.' });
+    return res.status(403).json({
+      error: 'Fallo en la verificación antibot de Cloudflare. Por favor completa el captcha.',
+      code: 'CF_FAILED'
+    });
   }
 
   // Comprobar si ya existe usuario o correo
   const existingUser = getUserByUsernameOrEmail(username);
   if (existingUser) {
-    return res.status(409).json({ error: 'El nombre de usuario ya está en uso. Elige otro.' });
+    return res.status(409).json({
+      error: 'El nombre de usuario ya está en uso. Elige otro.',
+      code: 'USER_EXISTS'
+    });
   }
   const existingEmail = getUserByEmail(email);
   if (existingEmail) {
-    return res.status(409).json({ error: 'Este correo electrónico ya está registrado. Intenta iniciar sesión o recuperar contraseña.' });
+    return res.status(409).json({
+      error: 'Este correo electrónico ya está registrado. Intenta iniciar sesión o recuperar contraseña.',
+      code: 'EMAIL_EXISTS'
+    });
   }
 
   try {
-    const newUser = createUser({ email, username, name, password });
+    const newUser = createUser({ email: email.trim(), username: username.trim(), name: name.trim(), password });
     claimSessionAliasesForUser(req.sessionId, newUser.id);
 
     res.cookie('gm_user_id', String(newUser.id), {
@@ -281,7 +357,7 @@ app.post('/api/auth/register', async (req, res) => {
       maxLimit: 10
     });
   } catch (err) {
-    res.status(500).json({ error: 'Error al registrar usuario: ' + err.message });
+    res.status(500).json({ error: 'Error al registrar usuario: ' + err.message, code: 'SERVER_ERROR' });
   }
 });
 
@@ -289,12 +365,12 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, forceDiscardGuest } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: 'Ingresa tu correo y contraseña.' });
+    return res.status(400).json({ error: 'Ingresa tu correo y contraseña.', code: 'MISSING_FIELDS' });
   }
 
   const user = getUserByUsernameOrEmail(email);
   if (!user || !verifyPassword(password, user.password_hash)) {
-    return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
+    return res.status(401).json({ error: 'Correo o contraseña incorrectos.', code: 'INVALID_CREDENTIALS' });
   }
 
   // Control de migración de límite de 10 correos
@@ -305,6 +381,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (sessionCount > 0 && (userCount + sessionCount > 10) && !forceDiscardGuest) {
     return res.status(409).json({
       conflict: true,
+      code: 'LIMIT_CONFLICT',
       userCount,
       sessionCount,
       message: userCount >= 10
@@ -336,14 +413,14 @@ app.post('/api/auth/login', async (req, res) => {
   });
 });
 
-// Olvidé mi contraseña: Enviar código OTP de 6 dígitos al correo oficial
+// Olvidé mi contraseña: Enviar código OTP de 6 dígitos al correo registrado
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'Ingresa tu correo electrónico registrado.' });
+  if (!email) return res.status(400).json({ error: 'Ingresa tu correo electrónico registrado.', code: 'MISSING_EMAIL' });
 
-  const user = getUserByEmail(email);
+  const user = getUserByEmail(email.trim());
   if (!user) {
-    return res.status(404).json({ error: 'No existe ninguna cuenta registrada con este correo electrónico.' });
+    return res.status(404).json({ error: 'No existe ninguna cuenta registrada con este correo electrónico.', code: 'USER_NOT_FOUND' });
   }
 
   // Generar código de 6 dígitos
@@ -355,6 +432,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
   res.json({
     ok: true,
+    code: 'CODE_SENT',
     message: `Se ha enviado un código de 6 dígitos a ${user.email}. Por favor revisa tu bandeja de entrada o spam.`
   });
 });
@@ -364,21 +442,28 @@ app.post('/api/auth/reset-password', (req, res) => {
   const { email, code, newPassword, confirmNewPassword } = req.body;
 
   if (!email || !code || !newPassword) {
-    return res.status(400).json({ error: 'Por favor completa todos los campos requeridos.' });
+    return res.status(400).json({ error: 'Por favor completa todos los campos requeridos.', code: 'MISSING_FIELDS' });
   }
-  if (newPassword.length < 4) {
-    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 4 caracteres.' });
+  if (!isStrongPassword(newPassword)) {
+    return res.status(400).json({
+      error: 'La nueva contraseña debe tener al menos 8 caracteres e incluir al menos una mayúscula, un número y un símbolo especial (!@#$%...).',
+      code: 'WEAK_PASSWORD'
+    });
   }
   if (newPassword !== confirmNewPassword) {
-    return res.status(400).json({ error: 'Las nuevas contraseñas no coinciden.' });
+    return res.status(400).json({ error: 'Las nuevas contraseñas no coinciden.', code: 'PASSWORD_MISMATCH' });
   }
 
-  const ok = resetPasswordWithCode(email, code, newPassword);
+  const ok = resetPasswordWithCode(email.trim(), code.trim(), newPassword);
   if (!ok) {
-    return res.status(400).json({ error: 'El código de verificación es inválido o ha caducado.' });
+    return res.status(400).json({ error: 'El código de verificación es inválido o ha caducado.', code: 'INVALID_CODE' });
   }
 
-  res.json({ ok: true, message: '¡Contraseña restablecida con éxito! Ya puedes iniciar sesión con tu nueva contraseña.' });
+  res.json({
+    ok: true,
+    code: 'PASSWORD_RESET_SUCCESS',
+    message: '¡Contraseña restablecida con éxito! Ya puedes iniciar sesión con tu nueva contraseña.'
+  });
 });
 
 app.post('/api/auth/logout', (req, res) => {

@@ -24,6 +24,8 @@ export class ImapWorkerPool extends EventEmitter {
     super();
     this.accounts = accounts || [];
     this.clients = new Map();
+    this.pollTimers = new Map();
+    this.processedUids = new Set();
     this.isRunning = false;
   }
 
@@ -63,26 +65,39 @@ export class ImapWorkerPool extends EventEmitter {
       console.log(`[IMAP] Conectado exitosamente a ${email}`);
       this.emit('accountConnected', { user: email });
 
-      // Iniciar el listener en INBOX
+      // Iniciar el listener continuo
       await this.listenInbox(client, account);
     } catch (err) {
       console.error(`[IMAP] Error en cuenta ${email}:`, err.message);
       this.emit('accountError', { user: email, error: err.message });
-      // Reintentar en 15 segundos si se cae
+      // Reintentar en 10 segundos si se cae
       if (this.isRunning) {
-        setTimeout(() => this.connectAccount(account), 15000);
+        setTimeout(() => this.connectAccount(account), 10000);
       }
     }
   }
 
   async listenInbox(client, account) {
+    let mailboxPath = 'INBOX';
     try {
-      const lock = await client.getMailboxLock('INBOX');
-      console.log(`[IMAP] Escuchando buzón INBOX para ${account.user} con IDLE...`);
+      // En Gmail, buscar [Gmail]/Todos o mailbox con specialUse \All para capturar Inbox, Categorías y Spam sin demora
+      try {
+        const list = await client.list();
+        const allMailbox = list.find(m => m.specialUse === '\\All') || list.find(m => m.path === '[Gmail]/Todos' || m.path === '[Gmail]/All Mail');
+        if (allMailbox) {
+          mailboxPath = allMailbox.path;
+        }
+      } catch (listErr) {
+        mailboxPath = 'INBOX';
+      }
+
+      console.log(`[IMAP] Seleccionando buzón "${mailboxPath}" para ${account.user}...`);
+      const lock = await client.getMailboxLock(mailboxPath);
+      console.log(`[IMAP] Escuchando buzón "${mailboxPath}" para ${account.user} con IDLE continuo...`);
 
       // Cargar los últimos 5 mensajes recientes al conectar
       try {
-        const status = await client.status('INBOX', { messages: true });
+        const status = await client.status(mailboxPath, { messages: true });
         if (status && status.messages > 0) {
           const startSeq = Math.max(1, status.messages - 4);
           for await (const msg of client.fetch(`${startSeq}:*`, { source: true, envelope: true, uid: true })) {
@@ -93,30 +108,90 @@ export class ImapWorkerPool extends EventEmitter {
         console.error(`[IMAP] Error al precargar mensajes:`, loadErr.message);
       }
 
-      // Evento de nuevo mensaje
+      // Evento instantáneo de nuevo mensaje vía IMAP PUSH (IDLE)
       client.on('exists', async () => {
         try {
-          await this.processLatestMessage(client, account);
+          await this.fetchRecentMessages(client, mailboxPath, account);
         } catch (e) {
           console.error(`[IMAP] Error al procesar mensaje en ${account.user}:`, e.message);
         }
       });
 
-      // Mantener IDLE activo
-      await client.idle();
-      lock.release();
+      // Polling activo de respaldo cada 3.5 segundos para garantizar que NUNCA haya retrasos
+      if (this.pollTimers.has(account.user)) {
+        clearInterval(this.pollTimers.get(account.user));
+      }
+      const pollInterval = setInterval(async () => {
+        if (!this.isRunning || !client.usable) {
+          clearInterval(pollInterval);
+          return;
+        }
+        try {
+          await this.fetchRecentMessages(client, mailboxPath, account);
+        } catch (pollErr) {
+          // Ignorar errores temporales de red durante poll
+        }
+      }, 3500);
+      this.pollTimers.set(account.user, pollInterval);
+
+      // Bucle de IDLE continuo para mantener la conexión viva indefinidamente
+      try {
+        while (this.isRunning && client.usable) {
+          try {
+            await client.idle();
+          } catch (idleErr) {
+            if (!this.isRunning) break;
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+      } finally {
+        lock.release();
+        if (this.pollTimers.has(account.user)) {
+          clearInterval(this.pollTimers.get(account.user));
+          this.pollTimers.delete(account.user);
+        }
+      }
     } catch (err) {
       console.error(`[IMAP] Conexión interrumpida en ${account.user}:`, err.message);
       if (this.isRunning) {
-        setTimeout(() => this.connectAccount(account), 10000);
+        setTimeout(() => this.connectAccount(account), 8000);
       }
+    }
+  }
+
+  async fetchRecentMessages(client, mailboxPath, account) {
+    try {
+      const status = await client.status(mailboxPath, { messages: true });
+      if (!status || status.messages <= 0) return;
+
+      const startSeq = Math.max(1, status.messages - 3);
+      for await (const msg of client.fetch(`${startSeq}:*`, { source: true, envelope: true, uid: true })) {
+        await this.parseAndEmitMessage(msg, account);
+      }
+    } catch (err) {
+      // Ignorar errores silenciosos en lecturas concurrentes
     }
   }
 
   async parseAndEmitMessage(message, account) {
     if (!message || !message.source) return;
+
+    const uidKey = `${account.user}_${message.uid || message.id || ''}`;
+    if (message.uid && this.processedUids.has(uidKey)) {
+      return; // Ya procesado, no repetir
+    }
+
     try {
       const parsed = await simpleParser(message.source);
+
+      // Guardar en la caché de UIDs procesados (máx 500 para evitar fugas de memoria)
+      if (message.uid) {
+        this.processedUids.add(uidKey);
+        if (this.processedUids.size > 500) {
+          const firstKey = this.processedUids.values().next().value;
+          this.processedUids.delete(firstKey);
+        }
+      }
 
       // Determinar a quién iba dirigido (para mapear al alias exacto)
       const deliveredToRaw = parsed.headers.get('delivered-to');
@@ -154,17 +229,13 @@ export class ImapWorkerPool extends EventEmitter {
     }
   }
 
-  async processLatestMessage(client, account) {
-    try {
-      const message = await client.fetchOne('*', { source: true, envelope: true, uid: true });
-      await this.parseAndEmitMessage(message, account);
-    } catch (err) {
-      console.error(`[IMAP] Error al obtener último mensaje:`, err.message);
-    }
-  }
-
   async stop() {
     this.isRunning = false;
+    for (const timer of this.pollTimers.values()) {
+      clearInterval(timer);
+    }
+    this.pollTimers.clear();
+
     for (const [user, client] of this.clients.entries()) {
       try {
         await client.logout();

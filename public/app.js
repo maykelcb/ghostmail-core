@@ -27,8 +27,15 @@ const translations = {
     tab_login: "Iniciar Sesión",
     tab_register: "Registrarse",
     auth_perk: "Accede a 10 correos simultáneos y guarda tu historial",
-    username: "Usuario",
+    email_label: "Correo electrónico",
+    name_label: "Nombre",
+    username_label: "Usuario (inicia con letra)",
     password: "Contraseña",
+    confirm_password: "Confirmar contraseña",
+    password_hint: "Mínimo 8 caracteres, al menos una mayúscula, un número y un símbolo.",
+    email_placeholder: "ej. usuario@gmail.com",
+    name_placeholder: "ej. Maykel Bernaola",
+    user_placeholder: "ej. maykel1234",
     confirm_title: "¿Eliminar?",
     confirm_desc: "Esta acción no se puede deshacer.",
     cancel: "Cancelar",
@@ -47,9 +54,6 @@ const translations = {
     add_another: "Agregar",
     active_emails_title: "Correos activos",
     history_inbox: "Historial de mensajes",
-    full_name: "Nombre completo",
-    official_email: "Correo oficial verídico",
-    confirm_password: "Confirmar contraseña",
     create_account: "Crear cuenta",
     sound_on: "Sonido activado",
     sound_off: "Sonido silenciado",
@@ -65,7 +69,27 @@ const translations = {
     change_password: "Restablecer contraseña",
     change_email: "Cambiar correo",
     conflict_title: "Límite de correos alcanzado",
-    proceed_login: "Continuar e iniciar sesión"
+    proceed_login: "Continuar e iniciar sesión",
+    // Errores y Notificaciones
+    err_user_exists: "El nombre de usuario ya está en uso. Elige otro.",
+    err_email_exists: "Este correo electrónico ya está registrado. Intenta iniciar sesión o recuperar contraseña.",
+    err_invalid_credentials: "Correo o contraseña incorrectos.",
+    err_disposable_email: "No se permiten correos temporales o desechables. Por favor usa un proveedor permanente (Gmail, Outlook, Yahoo, etc.).",
+    err_weak_password: "La contraseña debe tener al menos 8 caracteres e incluir al menos una mayúscula, un número y un símbolo especial (!@#$%...).",
+    err_password_mismatch: "Las contraseñas no coinciden.",
+    err_name_invalid: "El nombre solo debe contener letras y espacios (sin números ni símbolos).",
+    err_email_invalid: "Por favor ingresa un correo electrónico válido.",
+    err_username_invalid: "El usuario debe comenzar con una letra y tener entre 3 y 20 caracteres (solo letras, números y _). No puede ser solo números.",
+    err_cf_failed: "Fallo en la verificación antibot de Cloudflare. Por favor completa el captcha.",
+    err_user_not_found: "No existe ninguna cuenta registrada con este correo electrónico.",
+    err_invalid_code: "El código de verificación es inválido o ha caducado.",
+    err_missing_fields: "Por favor completa todos los campos requeridos.",
+    err_missing_email: "Ingresa tu correo registrado.",
+    err_connection: "Error de conexión con el servidor.",
+    msg_code_sent: "Código de verificación enviado. Revisa tu bandeja de entrada o spam.",
+    msg_password_reset_success: "¡Contraseña restablecida con éxito! Ya puedes iniciar sesión con tu nueva contraseña.",
+    msg_welcome_user: "Bienvenido",
+    msg_account_created: "Cuenta creada exitosamente"
   },
   en: {
     accent_color: "Accent color",
@@ -90,8 +114,15 @@ const translations = {
     tab_login: "Log In",
     tab_register: "Sign Up",
     auth_perk: "Get up to 10 simultaneous emails and save your history",
-    username: "Username",
+    email_label: "Email address",
+    name_label: "Name",
+    username_label: "Username (starts with letter)",
     password: "Password",
+    confirm_password: "Confirm password",
+    password_hint: "Minimum 8 characters, at least one uppercase letter, one number, and one symbol.",
+    email_placeholder: "e.g. user@gmail.com",
+    name_placeholder: "e.g. John Doe",
+    user_placeholder: "e.g. john1234",
     confirm_title: "Delete?",
     confirm_desc: "This action cannot be undone.",
     cancel: "Cancel",
@@ -110,9 +141,6 @@ const translations = {
     add_another: "Add another",
     active_emails_title: "Active emails",
     history_inbox: "Message history",
-    full_name: "Full name",
-    official_email: "Official verified email",
-    confirm_password: "Confirm password",
     create_account: "Create account",
     sound_on: "Sound enabled",
     sound_off: "Sound muted",
@@ -128,7 +156,27 @@ const translations = {
     change_password: "Reset password",
     change_email: "Change email",
     conflict_title: "Email limit reached",
-    proceed_login: "Continue and log in"
+    proceed_login: "Continue and log in",
+    // Errors and Notifications
+    err_user_exists: "Username already in use. Please choose another.",
+    err_email_exists: "This email address is already registered. Try logging in or resetting password.",
+    err_invalid_credentials: "Incorrect email or password.",
+    err_disposable_email: "Temporary or disposable emails are not allowed. Please use a permanent email provider (Gmail, Outlook, Yahoo, etc.).",
+    err_weak_password: "Password must be at least 8 characters long and include at least one uppercase letter, one number, and one special symbol (!@#$%...).",
+    err_password_mismatch: "Passwords do not match.",
+    err_name_invalid: "Name must only contain letters and spaces (no numbers or symbols).",
+    err_email_invalid: "Please enter a valid email address.",
+    err_username_invalid: "Username must start with a letter and have 3-20 characters (letters, numbers and _ only). Cannot be only numbers.",
+    err_cf_failed: "Cloudflare bot verification failed. Please complete the captcha.",
+    err_user_not_found: "No account exists with this email address.",
+    err_invalid_code: "The verification code is invalid or has expired.",
+    err_missing_fields: "Please complete all required fields.",
+    err_missing_email: "Enter your registered email.",
+    err_connection: "Connection error with the server.",
+    msg_code_sent: "Verification code sent. Check your inbox or spam folder.",
+    msg_password_reset_success: "Password reset successfully! You can now log in with your new password.",
+    msg_welcome_user: "Welcome back",
+    msg_account_created: "Account created successfully"
   }
 };
 
@@ -136,6 +184,49 @@ let currentLang = localStorage.getItem('ghost_lang') || 'es';
 
 function t(key) {
   return translations[currentLang]?.[key] || translations['es']?.[key] || key;
+}
+
+function getTranslatedError(data) {
+  if (!data) return t('err_connection');
+  if (data.code && translations[currentLang]?.[`err_${data.code.toLowerCase()}`]) {
+    return translations[currentLang][`err_${data.code.toLowerCase()}`];
+  }
+  const errStr = (data.error || '').toLowerCase();
+  if (errStr.includes('nombre de usuario ya está en uso') || errStr.includes('username already')) return t('err_user_exists');
+  if (errStr.includes('ya está registrado') || errStr.includes('already registered')) return t('err_email_exists');
+  if (errStr.includes('incorrectos') || errStr.includes('incorrect')) return t('err_invalid_credentials');
+  if (errStr.includes('desechable') || errStr.includes('temporal') || errStr.includes('disposable')) return t('err_disposable_email');
+  if (errStr.includes('al menos') && (errStr.includes('caracteres') || errStr.includes('characters'))) return t('err_weak_password');
+  if (errStr.includes('no coinciden') || errStr.includes('dont match') || errStr.includes('not match')) return t('err_password_mismatch');
+  if (errStr.includes('solo debe contener letras') || errStr.includes('only contain letters')) return t('err_name_invalid');
+  if (errStr.includes('no existe ninguna cuenta') || errStr.includes('no account exists')) return t('err_user_not_found');
+  if (errStr.includes('código de verificación es inválido') || errStr.includes('invalid or has expired')) return t('err_invalid_code');
+  if (errStr.includes('cloudflare')) return t('err_cf_failed');
+  return data.error || t('err_connection');
+}
+
+function isFrontendDisposableEmail(email) {
+  if (!email || !email.includes('@')) return false;
+  const domain = email.toLowerCase().split('@')[1]?.trim();
+  if (!domain) return false;
+  const blockedList = [
+    'mailinator.com', 'yopmail.com', '10minutemail.com', 'tempmail.com', 'guerrillamail.com',
+    'throwawaymail.com', 'sharklasers.com', 'dispostable.com', 'getnada.com', 'mohmal.com',
+    'crazymailing.com', 'fakeinbox.com', 'mytemp.email', 'temp-mail.org', 'fakemailgenerator.com',
+    'emailondeck.com', 'generator.email', 'inboxkitten.com', 'burnermail.io', 'dropmail.me',
+    'tempail.com', 'trashmail.com', 'trashmail.net', 'maildrop.cc', 'grr.la', 'inboxalias.com'
+  ];
+  if (blockedList.includes(domain)) return true;
+  const suspicious = ['tempmail', '10minute', 'guerrilla', 'throwaway', 'dispostable', 'fakemail', 'burnermail', 'trashmail', 'mytemp', 'sharklaser', 'yopmail', 'mailinator'];
+  return suspicious.some(k => domain.includes(k));
+}
+
+function isFrontendStrongPassword(pass) {
+  if (!pass || pass.length < 8) return false;
+  const hasUpper = /[A-Z]/.test(pass);
+  const hasNumber = /[0-9]/.test(pass);
+  const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(pass);
+  return hasUpper && hasNumber && hasSymbol;
 }
 
 function applyLanguage(lang) {
@@ -150,7 +241,15 @@ function applyLanguage(lang) {
     }
   });
 
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+    const key = el.getAttribute('data-i18n-ph');
+    if (translations[lang]?.[key]) {
+      el.setAttribute('placeholder', translations[lang][key]);
+    }
+  });
+
   updateLimitInfoText();
+  updateAuthUI();
 }
 
 // ─── Web Audio API Doble Chime Cristalino ────────────────────────────────────
@@ -870,6 +969,11 @@ function openAuthModal(view = 'login') {
   forgotFormStep1.style.display = 'none';
   forgotFormStep2.style.display = 'none';
 
+  loginSubmitBtn.innerHTML = `<span>${t('login')}</span>`;
+  regSubmitBtn.innerHTML = `<span>${t('create_account')}</span>`;
+  btnSendResetCode.innerHTML = `<span>${t('send_code')}</span>`;
+  btnSubmitNewPassword.innerHTML = `<span>${t('change_password')}</span>`;
+
   if (view === 'login') {
     tabLoginBtn.classList.add('active');
     tabRegisterBtn.classList.remove('active');
@@ -889,11 +993,14 @@ function openAuthModal(view = 'login') {
   openModal(authModal);
 }
 
-// Enviar Login con verificación de conflicto de 10 correos (Punto 6)
+// Enviar Login con verificación de conflicto de 10 correos
 async function handleLoginSubmit(forceDiscardGuest = false) {
   const email = loginEmail.value.trim();
   const password = loginPassword.value;
-  if (!email || !password) return;
+  if (!email || !password) {
+    showToast(t('err_missing_fields'), 'error');
+    return;
+  }
 
   loginSubmitBtn.disabled = true;
   loginSubmitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...';
@@ -906,7 +1013,7 @@ async function handleLoginSubmit(forceDiscardGuest = false) {
     });
     const data = await res.json();
 
-    // Caso de conflicto: la cuenta ya tiene 10 o al sumar supera 10 (Punto 6)
+    // Caso de conflicto de límite de 10 correos
     if (res.status === 409 && data.conflict) {
       pendingConflictLogin = { email, password };
       conflictModalDesc.textContent = data.message;
@@ -915,7 +1022,7 @@ async function handleLoginSubmit(forceDiscardGuest = false) {
     }
 
     if (!res.ok) {
-      showToast(data.error || 'Error', 'error');
+      showToast(getTranslatedError(data), 'error');
       return;
     }
 
@@ -924,17 +1031,17 @@ async function handleLoginSubmit(forceDiscardGuest = false) {
     alreadyVerified = true;
     updateAuthUI();
     closeModal(authModal);
-    showToast(`Bienvenido ${currentUser.name || currentUser.username} (Límite: ${maxLimit})`, 'success');
+    showToast(`${t('msg_welcome_user')} ${currentUser.name || currentUser.username}`, 'success');
     await loadAliases();
   } catch (e) {
-    showToast('Error de conexión', 'error');
+    showToast(t('err_connection'), 'error');
   } finally {
     loginSubmitBtn.disabled = false;
     loginSubmitBtn.innerHTML = `<span>${t('login')}</span>`;
   }
 }
 
-// Enviar Registro con validaciones estrictas (Punto 8)
+// Enviar Registro con validaciones estrictas
 async function handleRegisterSubmit() {
   const name = regName.value.trim();
   const email = regEmail.value.trim().toLowerCase();
@@ -942,34 +1049,38 @@ async function handleRegisterSubmit() {
   const password = regPassword.value;
   const confirmPassword = regConfirmPassword.value;
 
-  // 1. Validar nombre completo (solo letras y espacios)
+  // 1. Validar nombre (solo letras y espacios)
   const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]{2,50}$/;
   if (!name || !nameRegex.test(name)) {
-    showToast('El nombre completo solo debe contener letras y espacios.', 'error');
+    showToast(t('err_name_invalid'), 'error');
     return;
   }
 
-  // 2. Validar correo oficial
+  // 2. Validar correo (RFC y no desechable)
   const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   if (!email || !emailRegex.test(email)) {
-    showToast('Ingresa un correo electrónico verídico y válido.', 'error');
+    showToast(t('err_email_invalid'), 'error');
+    return;
+  }
+  if (isFrontendDisposableEmail(email)) {
+    showToast(t('err_disposable_email'), 'error');
     return;
   }
 
-  // 3. Validar usuario (comienza con letra, letras/números/_, no solo números)
+  // 3. Validar usuario (comienza con letra, 3-20 caracteres, no solo números)
   const usernameRegex = /^[a-zA-Z][a-zA-Z0-9_]{2,19}$/;
   if (!username || !usernameRegex.test(username)) {
-    showToast('El usuario debe comenzar con una letra y tener entre 3 y 20 caracteres.', 'error');
+    showToast(t('err_username_invalid'), 'error');
     return;
   }
 
-  // 4. Validar contraseña
-  if (!password || password.length < 4) {
-    showToast('La contraseña debe tener al menos 4 caracteres.', 'error');
+  // 4. Validar contraseña segura (min 8 chars, mayúscula, número y símbolo)
+  if (!isFrontendStrongPassword(password)) {
+    showToast(t('err_weak_password'), 'error');
     return;
   }
   if (password !== confirmPassword) {
-    showToast('Las contraseñas no coinciden.', 'error');
+    showToast(t('err_password_mismatch'), 'error');
     return;
   }
 
@@ -992,7 +1103,7 @@ async function handleRegisterSubmit() {
     const data = await res.json();
 
     if (!res.ok) {
-      showToast(data.error || 'Error al registrar', 'error');
+      showToast(getTranslatedError(data), 'error');
       return;
     }
 
@@ -1001,21 +1112,21 @@ async function handleRegisterSubmit() {
     alreadyVerified = true;
     updateAuthUI();
     closeModal(authModal);
-    showToast(`Cuenta creada: ${currentUser.name || currentUser.username} (Límite: 10 correos)`, 'success');
+    showToast(`${t('msg_account_created')}: ${currentUser.name || currentUser.username}`, 'success');
     await loadAliases();
   } catch (e) {
-    showToast('Error de conexión', 'error');
+    showToast(t('err_connection'), 'error');
   } finally {
     regSubmitBtn.disabled = false;
     regSubmitBtn.innerHTML = `<span>${t('create_account')}</span>`;
   }
 }
 
-// ─── Recuperación de Contraseña (Punto 1) ────────────────────────────────────
+// ─── Recuperación de Contraseña ─────────────────────────────────────────────
 async function handleSendResetCode() {
   const email = forgotEmail.value.trim().toLowerCase();
   if (!email) {
-    showToast('Ingresa tu correo registrado.', 'error');
+    showToast(t('err_missing_email'), 'error');
     return;
   }
 
@@ -1031,15 +1142,15 @@ async function handleSendResetCode() {
     const data = await res.json();
 
     if (!res.ok) {
-      showToast(data.error || 'Error', 'error');
+      showToast(getTranslatedError(data), 'error');
       return;
     }
 
     resetPendingEmail = email;
-    showToast(data.message, 'success');
+    showToast(data.message || t('msg_code_sent'), 'success');
     openAuthModal('forgotStep2');
   } catch (e) {
-    showToast('Error de conexión al enviar código', 'error');
+    showToast(t('err_connection'), 'error');
   } finally {
     btnSendResetCode.disabled = false;
     btnSendResetCode.innerHTML = `<span>${t('send_code')}</span>`;
@@ -1052,15 +1163,15 @@ async function handleResetPasswordSubmit() {
   const confirmNewPassword = resetConfirmPassword.value;
 
   if (!code || code.length !== 6) {
-    showToast('Ingresa el código de 6 dígitos recibido.', 'error');
+    showToast(t('err_invalid_code'), 'error');
     return;
   }
-  if (!newPassword || newPassword.length < 4) {
-    showToast('La nueva contraseña debe tener al menos 4 caracteres.', 'error');
+  if (!isFrontendStrongPassword(newPassword)) {
+    showToast(t('err_weak_password'), 'error');
     return;
   }
   if (newPassword !== confirmNewPassword) {
-    showToast('Las contraseñas no coinciden.', 'error');
+    showToast(t('err_password_mismatch'), 'error');
     return;
   }
 
@@ -1081,16 +1192,16 @@ async function handleResetPasswordSubmit() {
     const data = await res.json();
 
     if (!res.ok) {
-      showToast(data.error || 'Error', 'error');
+      showToast(getTranslatedError(data), 'error');
       return;
     }
 
-    showToast(data.message, 'success');
+    showToast(t('msg_password_reset_success'), 'success');
     loginEmail.value = resetPendingEmail;
     loginPassword.value = '';
     openAuthModal('login');
   } catch (e) {
-    showToast('Error de conexión', 'error');
+    showToast(t('err_connection'), 'error');
   } finally {
     btnSubmitNewPassword.disabled = false;
     btnSubmitNewPassword.innerHTML = `<span>${t('change_password')}</span>`;
@@ -1276,5 +1387,23 @@ function initEventListeners() {
       closeConfirmDialog();
       await cb();
     }
+  });
+
+  // Mostrar / Ocultar contraseñas (Punto 3)
+  document.querySelectorAll('.btn-toggle-password').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetId = btn.getAttribute('data-target');
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      const icon = btn.querySelector('i');
+      if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.className = 'fa-regular fa-eye-slash';
+      } else {
+        input.type = 'password';
+        if (icon) icon.className = 'fa-regular fa-eye';
+      }
+    });
   });
 }
