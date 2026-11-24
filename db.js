@@ -87,6 +87,12 @@ try {
   if (!userCols.some(col => col.name === 'reset_code_expires')) {
     db.exec(`ALTER TABLE users ADD COLUMN reset_code_expires TEXT DEFAULT NULL;`);
   }
+  if (!userCols.some(col => col.name === 'last_active_at')) {
+    db.exec(`ALTER TABLE users ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'));`);
+  }
+  if (!aliasCols.some(col => col.name === 'last_active_at')) {
+    db.exec(`ALTER TABLE aliases ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'));`);
+  }
   // Migrar usuarios anteriores que tenían email en recovery_email
   db.exec(`UPDATE users SET email = recovery_email WHERE email IS NULL AND recovery_email IS NOT NULL;`);
 } catch (e) {
@@ -363,6 +369,49 @@ export function deleteMessage(id, sessionId, userId = null) {
 
 export function clearAllMessages() {
   db.prepare(`UPDATE messages SET deleted_at = datetime('now') WHERE deleted_at IS NULL`).run();
+}
+
+// ─── Control de Inactividad y Retención (Preparación Panel Administrador) ────
+export function touchUserActivity(userId) {
+  if (!userId) return;
+  db.prepare(`UPDATE users SET last_active_at = datetime('now') WHERE id = ?`).run(userId);
+}
+
+export function touchAliasActivity(aliasEmail) {
+  if (!aliasEmail) return;
+  db.prepare(`UPDATE aliases SET last_active_at = datetime('now') WHERE LOWER(email) = LOWER(?)`).run(aliasEmail.trim());
+}
+
+export function getInactiveUsers(days = 30) {
+  return db.prepare(`
+    SELECT id, email, username, name, last_active_at, created_at
+    FROM users
+    WHERE last_active_at IS NOT NULL AND last_active_at < datetime('now', '-' || ? || ' days')
+  `).all(days);
+}
+
+export function getInactiveAliases(days = 30) {
+  return db.prepare(`
+    SELECT a.*, u.email as user_email, u.username as user_name
+    FROM aliases a
+    LEFT JOIN users u ON u.id = a.user_id
+    WHERE a.status = 'active' AND (
+      a.last_active_at < datetime('now', '-' || ? || ' days')
+      OR (a.last_active_at IS NULL AND a.assigned_at < datetime('now', '-' || ? || ' days'))
+    )
+  `).all(days, days);
+}
+
+export function releaseInactiveAliases(days = 30) {
+  const result = db.prepare(`
+    UPDATE aliases
+    SET status = 'deleted', deleted_at = datetime('now')
+    WHERE status = 'active' AND (
+      last_active_at < datetime('now', '-' || ? || ' days')
+      OR (last_active_at IS NULL AND assigned_at < datetime('now', '-' || ? || ' days'))
+    )
+  `).run(days, days);
+  return result.changes;
 }
 
 export default db;

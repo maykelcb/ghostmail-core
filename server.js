@@ -19,7 +19,8 @@ import {
   deleteAlias, saveMessage, getMessagesByAlias,
   getMessageFull, deleteMessage,
   createUser, getUserByUsernameOrEmail, getUserByEmail, getUserById, verifyPassword,
-  setPasswordResetCode, verifyPasswordResetCode, resetPasswordWithCode
+  setPasswordResetCode, verifyPasswordResetCode, resetPasswordWithCode,
+  touchUserActivity, touchAliasActivity, getInactiveUsers, getInactiveAliases, releaseInactiveAliases
 } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -164,6 +165,7 @@ imapPool.on('message', (msg) => {
   });
 
   if (msgId === null) return;
+  touchAliasActivity(cleanTo);
 
   const payload = {
     id:          msgId,
@@ -245,6 +247,9 @@ function isStrongPassword(pass) {
 
 // ─── API: Autenticación ──────────────────────────────────────────────────────
 app.get('/api/auth/me', (req, res) => {
+  if (req.user) {
+    touchUserActivity(req.user.id);
+  }
   const maxLimit = req.user ? 10 : 5;
   const activeCount = countActiveAliases(req.sessionId, req.user?.id);
   const alreadyVerified = req.isTurnstileVerified || activeCount > 0;

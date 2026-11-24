@@ -70,6 +70,7 @@ const translations = {
     change_email: "Cambiar correo",
     conflict_title: "Límite de correos alcanzado",
     proceed_login: "Continuar e iniciar sesión",
+    logout_prompt: "¿Deseas cerrar la sesión de <b>{name}</b>?",
     // Errores y Notificaciones
     err_user_exists: "El nombre de usuario ya está en uso. Elige otro.",
     err_email_exists: "Este correo electrónico ya está registrado. Intenta iniciar sesión o recuperar contraseña.",
@@ -157,6 +158,7 @@ const translations = {
     change_email: "Change email",
     conflict_title: "Email limit reached",
     proceed_login: "Continue and log in",
+    logout_prompt: "Do you want to log out of <b>{name}</b>?",
     // Errors and Notifications
     err_user_exists: "Username already in use. Please choose another.",
     err_email_exists: "This email address is already registered. Try logging in or resetting password.",
@@ -1242,9 +1244,10 @@ function renderCreateTurnstile() {
 }
 
 // ─── Confirm Dialog ───────────────────────────────────
-function openConfirmDialog({ title, desc, onConfirm }) {
+function openConfirmDialog({ title, desc, confirmBtnText, onConfirm }) {
   confirmTitle.textContent = title;
   confirmDesc.innerHTML = desc;
+  confirmOk.textContent = confirmBtnText || t('confirm_delete');
   pendingConfirmCallback = onConfirm;
   confirmModal.classList.add('open');
 }
@@ -1324,9 +1327,11 @@ function initEventListeners() {
   // Auth Modal
   authBtn.addEventListener('click', () => {
     if (currentUser) {
+      const name = escapeHtml(currentUser.name || currentUser.username);
       openConfirmDialog({
         title: t('logout'),
-        desc: `¿Deseas cerrar la sesión de <b>${escapeHtml(currentUser.name || currentUser.username)}</b>?`,
+        desc: t('logout_prompt').replace('{name}', name),
+        confirmBtnText: t('logout'),
         onConfirm: handleLogout
       });
     } else {

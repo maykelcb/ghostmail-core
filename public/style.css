@@ -959,10 +959,12 @@ body {
   display: flex;
   align-items: center;
 }
-.input-wrapper i.fa-regular,
-.input-wrapper i.fa-solid {
+.input-wrapper > i.fa-regular,
+.input-wrapper > i.fa-solid {
   position: absolute;
   left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--text-muted);
   font-size: 13.5px;
   pointer-events: none;
@@ -980,26 +982,43 @@ body {
 }
 .input-wrapper input:focus { border-color: var(--accent-primary); }
 
-/* Password show/hide toggle */
+/* Password show/hide toggle perfectamente centrado y alineado */
+.input-wrapper-password {
+  position: relative;
+}
 .input-wrapper-password input {
-  padding-right: 40px !important;
+  padding-right: 42px !important;
 }
 .btn-toggle-password {
   position: absolute;
-  right: 8px;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 6px;
-  font-size: 14px;
+  padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 4px;
-  transition: color var(--transition);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background-color var(--transition);
+  z-index: 2;
 }
 .btn-toggle-password:hover {
   color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.btn-toggle-password i {
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  font-size: 14px !important;
+  color: inherit !important;
+  pointer-events: none;
 }
 
 .btn-auth-submit {
@@ -1015,11 +1034,11 @@ body {
 }
 .btn-auth-submit:hover { filter: brightness(1.1); }
 
-/* Botón flotante GitHub (Abajo a la derecha - Punto 3) */
+/* Botón flotante GitHub (Abajo a la izquierda) */
 .github-floating-corner {
   position: fixed;
   bottom: 20px;
-  right: 20px;
+  left: 20px;
   background: var(--bg-surface);
   border: 1px solid var(--border-mid);
   color: var(--text-secondary);
@@ -1069,10 +1088,10 @@ body {
   font-size: 13px; font-weight: 600; cursor: pointer;
 }
 
-/* ── Toast (Ubicado a la derecha, arriba de GitHub - Punto 1) ───────────── */
+/* ── Toast (En el lugar de GitHub: Abajo a la derecha) ───────────── */
 .toast-container {
   position: fixed;
-  bottom: 74px;
+  bottom: 20px;
   right: 20px;
   z-index: 999;
   display: flex;
@@ -1147,12 +1166,13 @@ body {
   }
   .github-floating-corner {
     bottom: 14px;
-    right: 14px;
+    left: 14px;
+    right: auto;
     padding: 6px 12px;
     font-size: 12px;
   }
   .toast-container {
-    bottom: 58px;
+    bottom: 14px;
     right: 14px;
   }
 }
