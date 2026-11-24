@@ -48,13 +48,24 @@ const translations = {
     active_emails_title: "Correos activos",
     history_inbox: "Historial de mensajes",
     full_name: "Nombre completo",
-    recovery_email: "Correo de recuperación personal",
+    official_email: "Correo oficial verídico",
     confirm_password: "Confirmar contraseña",
     create_account: "Crear cuenta",
-    verify_once_hint: "Verificación Cloudflare requerida para el primer correo:",
-    cf_verification: "Verificación antibot de Cloudflare:",
     sound_on: "Sonido activado",
-    sound_off: "Sonido silenciado"
+    sound_off: "Sonido silenciado",
+    forgot_password: "¿Olvidaste tu contraseña?",
+    recovery_title: "Recuperar Cuenta",
+    recovery_desc: "Ingresa tu correo oficial registrado para enviarte un código de verificación de 6 dígitos.",
+    send_code: "Enviar código",
+    back_to_login: "Volver a iniciar sesión",
+    enter_code_title: "Ingresa el código",
+    enter_code_desc: "Hemos enviado un código a tu correo. Ingrésalo junto con tu nueva contraseña.",
+    otp_code_label: "Código de 6 dígitos",
+    new_password: "Nueva contraseña",
+    change_password: "Restablecer contraseña",
+    change_email: "Cambiar correo",
+    conflict_title: "Límite de correos alcanzado",
+    proceed_login: "Continuar e iniciar sesión"
   },
   en: {
     accent_color: "Accent color",
@@ -100,13 +111,24 @@ const translations = {
     active_emails_title: "Active emails",
     history_inbox: "Message history",
     full_name: "Full name",
-    recovery_email: "Personal recovery email",
+    official_email: "Official verified email",
     confirm_password: "Confirm password",
     create_account: "Create account",
-    verify_once_hint: "Cloudflare verification required for your first email:",
-    cf_verification: "Cloudflare bot verification:",
     sound_on: "Sound enabled",
-    sound_off: "Sound muted"
+    sound_off: "Sound muted",
+    forgot_password: "Forgot your password?",
+    recovery_title: "Recover Account",
+    recovery_desc: "Enter your registered email to receive a 6-digit verification code.",
+    send_code: "Send code",
+    back_to_login: "Back to log in",
+    enter_code_title: "Enter the code",
+    enter_code_desc: "We have sent a code to your email. Enter it with your new password.",
+    otp_code_label: "6-digit code",
+    new_password: "New password",
+    change_password: "Reset password",
+    change_email: "Change email",
+    conflict_title: "Email limit reached",
+    proceed_login: "Continue and log in"
   }
 };
 
@@ -154,7 +176,7 @@ class GhostAudio {
     try {
       const now = this.ctx.currentTime;
 
-      // Primer tono suave (E5 a A5)
+      // Primer tono (E5 a A5)
       const osc1 = this.ctx.createOscillator();
       const gain1 = this.ctx.createGain();
       osc1.type = 'sine';
@@ -169,7 +191,7 @@ class GhostAudio {
       osc1.start(now);
       osc1.stop(now + 0.38);
 
-      // Segundo tono campanita WhatsApp (C6 a E6)
+      // Segundo tono campanita (C6 a E6)
       const osc2 = this.ctx.createOscillator();
       const gain2 = this.ctx.createGain();
       osc2.type = 'sine';
@@ -205,6 +227,9 @@ let alreadyVerified = false;
 let turnstileAuthWidgetId = null;
 let turnstileCreateWidgetId = null;
 
+let resetPendingEmail = '';
+let pendingConflictLogin = null;
+
 // DOM Elements
 const welcomeScreen       = document.getElementById('welcomeScreen');
 const aliasView           = document.getElementById('aliasView');
@@ -229,27 +254,46 @@ const btnCreateBig        = document.getElementById('btnCreateBig');
 const btnCreateNew        = document.getElementById('btnCreateNew');
 const btnGenerateModal    = document.getElementById('btnGenerateModal');
 const modalLimitText      = document.getElementById('modalLimitText');
-const turnstileCreateWrapper = document.getElementById('turnstileCreateWrapper');
+const turnstileCreateContainer = document.getElementById('turnstileCreateContainer');
 
 const authModal           = document.getElementById('authModal');
 const authModalClose      = document.getElementById('authModalClose');
 const authBtn             = document.getElementById('authBtn');
 const authBtnText         = document.getElementById('authBtnText');
+const authTabsNav         = document.getElementById('authTabsNav');
 const tabLoginBtn         = document.getElementById('tabLoginBtn');
 const tabRegisterBtn      = document.getElementById('tabRegisterBtn');
 
 const loginForm           = document.getElementById('loginForm');
-const loginUsername       = document.getElementById('loginUsername');
+const loginEmail          = document.getElementById('loginEmail');
 const loginPassword       = document.getElementById('loginPassword');
 const loginSubmitBtn      = document.getElementById('loginSubmitBtn');
+const btnGoToForgotPassword = document.getElementById('btnGoToForgotPassword');
 
 const registerForm        = document.getElementById('registerForm');
 const regName             = document.getElementById('regName');
-const regRecovery         = document.getElementById('regRecovery');
+const regEmail            = document.getElementById('regEmail');
 const regUsername         = document.getElementById('regUsername');
 const regPassword         = document.getElementById('regPassword');
 const regConfirmPassword  = document.getElementById('regConfirmPassword');
 const regSubmitBtn        = document.getElementById('regSubmitBtn');
+
+const forgotFormStep1     = document.getElementById('forgotFormStep1');
+const forgotEmail         = document.getElementById('forgotEmail');
+const btnSendResetCode    = document.getElementById('btnSendResetCode');
+const btnBackToLoginFromForgot = document.getElementById('btnBackToLoginFromForgot');
+
+const forgotFormStep2     = document.getElementById('forgotFormStep2');
+const resetOtpCode        = document.getElementById('resetOtpCode');
+const resetNewPassword    = document.getElementById('resetNewPassword');
+const resetConfirmPassword = document.getElementById('resetConfirmPassword');
+const btnSubmitNewPassword = document.getElementById('btnSubmitNewPassword');
+const btnBackToStep1      = document.getElementById('btnBackToStep1');
+
+const conflictModal       = document.getElementById('conflictModal');
+const conflictModalDesc   = document.getElementById('conflictModalDesc');
+const conflictCancel      = document.getElementById('conflictCancel');
+const conflictProceed     = document.getElementById('conflictProceed');
 
 const confirmModal        = document.getElementById('confirmModal');
 const confirmTitle        = document.getElementById('confirmTitle');
@@ -332,7 +376,7 @@ function updateLimitInfoText() {
   }
 }
 
-// ─── Audio UI Interactivo ─────────────────────────────
+// ─── Audio UI Interactivo con Doble Chime ──────────────
 function initAudioUI() {
   updateAudioIcon();
   audioToggle.addEventListener('click', () => {
@@ -373,9 +417,9 @@ async function checkAuthSession() {
 
 function updateAuthUI() {
   if (currentUser) {
-    authBtnText.textContent = currentUser.username;
+    authBtnText.textContent = currentUser.name || currentUser.username;
     authBtn.classList.add('logged-in');
-    authBtn.title = `${currentUser.username} (${t('logout')})`;
+    authBtn.title = `${currentUser.email} (${t('logout')})`;
   } else {
     authBtnText.textContent = t('login');
     authBtn.classList.remove('logged-in');
@@ -492,7 +536,6 @@ function renderSidebarList() {
 }
 
 // ─── Barra superior de correos creados (Punto 3) ───────
-// "si ya hay un correo que este debajo de ese correo, si hay 3 correos que este debajo de esos 3 correos"
 function renderCreatedEmailsBar() {
   if (!createdEmailsPills) return;
 
@@ -502,7 +545,7 @@ function renderCreatedEmailsBar() {
   }
 
   createdEmailsPills.innerHTML = '';
-  aliases.forEach((a, index) => {
+  aliases.forEach((a) => {
     const pill = document.createElement('div');
     const isActive = currentAlias && currentAlias.email.toLowerCase() === a.email.toLowerCase();
     pill.className = `email-pill-tab ${isActive ? 'active' : ''}`;
@@ -743,7 +786,7 @@ function confirmDeleteCurrentAlias() {
   });
 }
 
-// ─── Abrir Modal Crear con Lógica Cloudflare Primera Vez ─
+// ─── Abrir Modal Crear con Lógica Cloudflare ───────────
 function openCreateModalLogic() {
   if (aliases.length >= maxLimit) {
     showToast(currentUser ? t('limit_reached_user') : t('limit_reached_guest'), 'error');
@@ -751,14 +794,13 @@ function openCreateModalLogic() {
     return;
   }
 
-  // Cloudflare solo se muestra si NO se ha verificado aún en esta sesión Y no tiene correos
   const needsVerification = !alreadyVerified && aliases.length === 0 && !currentUser;
 
   if (needsVerification) {
-    turnstileCreateWrapper.style.display = 'block';
+    turnstileCreateContainer.style.display = 'flex';
     renderCreateTurnstile();
   } else {
-    turnstileCreateWrapper.style.display = 'none';
+    turnstileCreateContainer.style.display = 'none';
   }
 
   openModal(createModal);
@@ -807,7 +849,7 @@ async function createNewAlias() {
       return;
     }
 
-    alreadyVerified = true; // Ya no pedirá Cloudflare para los siguientes correos
+    alreadyVerified = true;
     closeModal(createModal);
     await loadAliases();
     selectAlias(data.email);
@@ -820,27 +862,38 @@ async function createNewAlias() {
   }
 }
 
-// ─── Autenticación (Login / Registro Completo) ─────────
-function openAuthModal(tab = 'login') {
-  if (tab === 'login') {
+// ─── Autenticación (Login / Registro / Olvidé Contraseña) ───────────────────
+function openAuthModal(view = 'login') {
+  authTabsNav.style.display = 'flex';
+  loginForm.style.display = 'none';
+  registerForm.style.display = 'none';
+  forgotFormStep1.style.display = 'none';
+  forgotFormStep2.style.display = 'none';
+
+  if (view === 'login') {
     tabLoginBtn.classList.add('active');
     tabRegisterBtn.classList.remove('active');
     loginForm.style.display = 'flex';
-    registerForm.style.display = 'none';
-  } else {
+  } else if (view === 'register') {
     tabRegisterBtn.classList.add('active');
     tabLoginBtn.classList.remove('active');
-    loginForm.style.display = 'none';
     registerForm.style.display = 'flex';
     renderAuthTurnstile();
+  } else if (view === 'forgotStep1') {
+    authTabsNav.style.display = 'none';
+    forgotFormStep1.style.display = 'flex';
+  } else if (view === 'forgotStep2') {
+    authTabsNav.style.display = 'none';
+    forgotFormStep2.style.display = 'flex';
   }
   openModal(authModal);
 }
 
-async function handleLoginSubmit() {
-  const username = loginUsername.value.trim();
+// Enviar Login con verificación de conflicto de 10 correos (Punto 6)
+async function handleLoginSubmit(forceDiscardGuest = false) {
+  const email = loginEmail.value.trim();
   const password = loginPassword.value;
-  if (!username || !password) return;
+  if (!email || !password) return;
 
   loginSubmitBtn.disabled = true;
   loginSubmitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...';
@@ -849,9 +902,17 @@ async function handleLoginSubmit() {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ email, password, forceDiscardGuest })
     });
     const data = await res.json();
+
+    // Caso de conflicto: la cuenta ya tiene 10 o al sumar supera 10 (Punto 6)
+    if (res.status === 409 && data.conflict) {
+      pendingConflictLogin = { email, password };
+      conflictModalDesc.textContent = data.message;
+      conflictModal.classList.add('open');
+      return;
+    }
 
     if (!res.ok) {
       showToast(data.error || 'Error', 'error');
@@ -863,7 +924,7 @@ async function handleLoginSubmit() {
     alreadyVerified = true;
     updateAuthUI();
     closeModal(authModal);
-    showToast(`Bienvenido ${currentUser.username} (Límite: ${maxLimit})`, 'success');
+    showToast(`Bienvenido ${currentUser.name || currentUser.username} (Límite: ${maxLimit})`, 'success');
     await loadAliases();
   } catch (e) {
     showToast('Error de conexión', 'error');
@@ -873,19 +934,42 @@ async function handleLoginSubmit() {
   }
 }
 
+// Enviar Registro con validaciones estrictas (Punto 8)
 async function handleRegisterSubmit() {
   const name = regName.value.trim();
-  const recoveryEmail = regRecovery.value.trim();
-  const username = regUsername.value.trim();
+  const email = regEmail.value.trim().toLowerCase();
+  const username = regUsername.value.trim().toLowerCase();
   const password = regPassword.value;
   const confirmPassword = regConfirmPassword.value;
 
-  if (!name || !recoveryEmail || !username || !password) {
-    showToast('Por favor completa todos los campos', 'error');
+  // 1. Validar nombre completo (solo letras y espacios)
+  const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]{2,50}$/;
+  if (!name || !nameRegex.test(name)) {
+    showToast('El nombre completo solo debe contener letras y espacios.', 'error');
+    return;
+  }
+
+  // 2. Validar correo oficial
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!email || !emailRegex.test(email)) {
+    showToast('Ingresa un correo electrónico verídico y válido.', 'error');
+    return;
+  }
+
+  // 3. Validar usuario (comienza con letra, letras/números/_, no solo números)
+  const usernameRegex = /^[a-zA-Z][a-zA-Z0-9_]{2,19}$/;
+  if (!username || !usernameRegex.test(username)) {
+    showToast('El usuario debe comenzar con una letra y tener entre 3 y 20 caracteres.', 'error');
+    return;
+  }
+
+  // 4. Validar contraseña
+  if (!password || password.length < 4) {
+    showToast('La contraseña debe tener al menos 4 caracteres.', 'error');
     return;
   }
   if (password !== confirmPassword) {
-    showToast('Las contraseñas no coinciden', 'error');
+    showToast('Las contraseñas no coinciden.', 'error');
     return;
   }
 
@@ -903,7 +987,7 @@ async function handleRegisterSubmit() {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, recoveryEmail, username, password, confirmPassword, turnstileToken })
+      body: JSON.stringify({ name, email, username, password, confirmPassword, turnstileToken })
     });
     const data = await res.json();
 
@@ -917,13 +1001,99 @@ async function handleRegisterSubmit() {
     alreadyVerified = true;
     updateAuthUI();
     closeModal(authModal);
-    showToast(`Cuenta creada exitosamente: ${currentUser.username} (Límite: 10 correos)`, 'success');
+    showToast(`Cuenta creada: ${currentUser.name || currentUser.username} (Límite: 10 correos)`, 'success');
     await loadAliases();
   } catch (e) {
     showToast('Error de conexión', 'error');
   } finally {
     regSubmitBtn.disabled = false;
     regSubmitBtn.innerHTML = `<span>${t('create_account')}</span>`;
+  }
+}
+
+// ─── Recuperación de Contraseña (Punto 1) ────────────────────────────────────
+async function handleSendResetCode() {
+  const email = forgotEmail.value.trim().toLowerCase();
+  if (!email) {
+    showToast('Ingresa tu correo registrado.', 'error');
+    return;
+  }
+
+  btnSendResetCode.disabled = true;
+  btnSendResetCode.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...';
+
+  try {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showToast(data.error || 'Error', 'error');
+      return;
+    }
+
+    resetPendingEmail = email;
+    showToast(data.message, 'success');
+    openAuthModal('forgotStep2');
+  } catch (e) {
+    showToast('Error de conexión al enviar código', 'error');
+  } finally {
+    btnSendResetCode.disabled = false;
+    btnSendResetCode.innerHTML = `<span>${t('send_code')}</span>`;
+  }
+}
+
+async function handleResetPasswordSubmit() {
+  const code = resetOtpCode.value.trim();
+  const newPassword = resetNewPassword.value;
+  const confirmNewPassword = resetConfirmPassword.value;
+
+  if (!code || code.length !== 6) {
+    showToast('Ingresa el código de 6 dígitos recibido.', 'error');
+    return;
+  }
+  if (!newPassword || newPassword.length < 4) {
+    showToast('La nueva contraseña debe tener al menos 4 caracteres.', 'error');
+    return;
+  }
+  if (newPassword !== confirmNewPassword) {
+    showToast('Las contraseñas no coinciden.', 'error');
+    return;
+  }
+
+  btnSubmitNewPassword.disabled = true;
+  btnSubmitNewPassword.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...';
+
+  try {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: resetPendingEmail,
+        code,
+        newPassword,
+        confirmNewPassword
+      })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showToast(data.error || 'Error', 'error');
+      return;
+    }
+
+    showToast(data.message, 'success');
+    loginEmail.value = resetPendingEmail;
+    loginPassword.value = '';
+    openAuthModal('login');
+  } catch (e) {
+    showToast('Error de conexión', 'error');
+  } finally {
+    btnSubmitNewPassword.disabled = false;
+    btnSubmitNewPassword.innerHTML = `<span>${t('change_password')}</span>`;
   }
 }
 
@@ -1030,7 +1200,6 @@ function initEventListeners() {
   btnCopyAlias.addEventListener('click', copyCurrentEmail);
   btnDeleteAlias.addEventListener('click', confirmDeleteCurrentAlias);
 
-  // Botón crear en sidebar, bienvenida y barra superior
   btnCreateBig.addEventListener('click', openCreateModalLogic);
   btnCreateNew.addEventListener('click', openCreateModalLogic);
   if (btnMiniAddAlias) btnMiniAddAlias.addEventListener('click', openCreateModalLogic);
@@ -1046,7 +1215,7 @@ function initEventListeners() {
     if (currentUser) {
       openConfirmDialog({
         title: t('logout'),
-        desc: `¿Deseas cerrar la sesión de <b>${escapeHtml(currentUser.username)}</b>?`,
+        desc: `¿Deseas cerrar la sesión de <b>${escapeHtml(currentUser.name || currentUser.username)}</b>?`,
         onConfirm: handleLogout
       });
     } else {
@@ -1062,8 +1231,39 @@ function initEventListeners() {
   tabLoginBtn.addEventListener('click', () => openAuthModal('login'));
   tabRegisterBtn.addEventListener('click', () => openAuthModal('register'));
 
-  loginForm.addEventListener('submit', handleLoginSubmit);
+  loginForm.addEventListener('submit', () => handleLoginSubmit(false));
   registerForm.addEventListener('submit', handleRegisterSubmit);
+
+  // Olvidé mi contraseña
+  btnGoToForgotPassword.addEventListener('click', (e) => {
+    e.preventDefault();
+    openAuthModal('forgotStep1');
+  });
+  btnBackToLoginFromForgot.addEventListener('click', (e) => {
+    e.preventDefault();
+    openAuthModal('login');
+  });
+  btnBackToStep1.addEventListener('click', (e) => {
+    e.preventDefault();
+    openAuthModal('forgotStep1');
+  });
+  forgotFormStep1.addEventListener('submit', handleSendResetCode);
+  forgotFormStep2.addEventListener('submit', handleResetPasswordSubmit);
+
+  // Modal de Conflicto de Límites (Punto 6)
+  conflictCancel.addEventListener('click', () => {
+    conflictModal.classList.remove('open');
+    pendingConflictLogin = null;
+  });
+  conflictProceed.addEventListener('click', async () => {
+    conflictModal.classList.remove('open');
+    if (pendingConflictLogin) {
+      loginEmail.value = pendingConflictLogin.email;
+      loginPassword.value = pendingConflictLogin.password;
+      await handleLoginSubmit(true); // forceDiscardGuest = true
+      pendingConflictLogin = null;
+    }
+  });
 
   // Confirm Modal
   confirmCancel.addEventListener('click', closeConfirmDialog);

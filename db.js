@@ -18,12 +18,15 @@ db.pragma('foreign_keys = ON');
 // ─── Esquema ────────────────────────────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    username       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
-    name           TEXT    DEFAULT NULL,
-    recovery_email TEXT    DEFAULT NULL,
-    password_hash  TEXT    NOT NULL,
-    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    email              TEXT    UNIQUE COLLATE NOCASE,
+    username           TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    name               TEXT    DEFAULT NULL,
+    recovery_email     TEXT    DEFAULT NULL,
+    password_hash      TEXT    NOT NULL,
+    reset_code         TEXT    DEFAULT NULL,
+    reset_code_expires TEXT    DEFAULT NULL,
+    created_at         TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS aliases (
@@ -60,21 +63,32 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_alias  ON messages(alias_email);
 `);
 
-// Migraciones seguras para columnas agregadas dinámicamente
+// Migraciones seguras para columnas
 try {
   const aliasCols = db.prepare(`PRAGMA table_info(aliases)`).all();
   if (!aliasCols.some(col => col.name === 'user_id')) {
-    db.exec(`ALTER TABLE aliases ADD COLUMN user_id INTEGER DEFAULT NULL REFERENCES users(id) ON DELETE SET NULL;`);
+    db.exec(`ALTER TABLE aliases ADD COLUMN user_id INTEGER DEFAULT NULL;`);
   }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_aliases_user ON aliases(user_id);`);
 
   const userCols = db.prepare(`PRAGMA table_info(users)`).all();
+  if (!userCols.some(col => col.name === 'email')) {
+    db.exec(`ALTER TABLE users ADD COLUMN email TEXT DEFAULT NULL;`);
+  }
   if (!userCols.some(col => col.name === 'name')) {
     db.exec(`ALTER TABLE users ADD COLUMN name TEXT DEFAULT NULL;`);
   }
   if (!userCols.some(col => col.name === 'recovery_email')) {
     db.exec(`ALTER TABLE users ADD COLUMN recovery_email TEXT DEFAULT NULL;`);
   }
+  if (!userCols.some(col => col.name === 'reset_code')) {
+    db.exec(`ALTER TABLE users ADD COLUMN reset_code TEXT DEFAULT NULL;`);
+  }
+  if (!userCols.some(col => col.name === 'reset_code_expires')) {
+    db.exec(`ALTER TABLE users ADD COLUMN reset_code_expires TEXT DEFAULT NULL;`);
+  }
+  // Migrar usuarios anteriores que tenían email en recovery_email
+  db.exec(`UPDATE users SET email = recovery_email WHERE email IS NULL AND recovery_email IS NOT NULL;`);
 } catch (e) {
   // Ignorar errores de columnas existentes
 }
@@ -94,27 +108,78 @@ export function verifyPassword(password, storedHash) {
   return crypto.timingSafeEqual(keyBuffer, derivedKey);
 }
 
-export function createUser({ username, name, recoveryEmail, password }) {
+export function createUser({ email, username, name, password }) {
+  const cleanEmail = email.trim().toLowerCase();
   const cleanUsername = username.trim().toLowerCase();
   const cleanName = (name || '').trim();
-  const cleanRecovery = (recoveryEmail || '').trim().toLowerCase();
   const passwordHash = hashPassword(password);
 
   const stmt = db.prepare(`
-    INSERT INTO users (username, name, recovery_email, password_hash)
+    INSERT INTO users (email, username, name, password_hash)
     VALUES (?, ?, ?, ?)
   `);
-  const result = stmt.run(cleanUsername, cleanName, cleanRecovery, passwordHash);
-  return { id: result.lastInsertRowid, username: cleanUsername, name: cleanName, recoveryEmail: cleanRecovery };
+  const result = stmt.run(cleanEmail, cleanUsername, cleanName, passwordHash);
+  return { id: result.lastInsertRowid, email: cleanEmail, username: cleanUsername, name: cleanName };
 }
 
-export function getUserByUsername(username) {
-  const clean = username.trim().toLowerCase();
-  return db.prepare(`SELECT * FROM users WHERE username = ?`).get(clean);
+export function getUserByEmail(email) {
+  const clean = (email || '').trim().toLowerCase();
+  return db.prepare(`SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(recovery_email) = ?`).get(clean, clean);
+}
+
+export function getUserByUsernameOrEmail(identifier) {
+  const clean = (identifier || '').trim().toLowerCase();
+  return db.prepare(`
+    SELECT * FROM users 
+    WHERE LOWER(email) = ? OR LOWER(username) = ? OR LOWER(recovery_email) = ?
+  `).get(clean, clean, clean);
 }
 
 export function getUserById(id) {
-  return db.prepare(`SELECT id, username, name, recovery_email, created_at FROM users WHERE id = ?`).get(id);
+  return db.prepare(`SELECT id, email, username, name, created_at FROM users WHERE id = ?`).get(id);
+}
+
+// ─── Recuperación de Contraseña ──────────────────────────────────────────────
+export function setPasswordResetCode(email, code, expiresMinutes = 15) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
+  const stmt = db.prepare(`
+    UPDATE users 
+    SET reset_code = ?, reset_code_expires = ?
+    WHERE LOWER(email) = ? OR LOWER(recovery_email) = ?
+  `);
+  const res = stmt.run(code, expiresAt, cleanEmail, cleanEmail);
+  return res.changes > 0;
+}
+
+export function verifyPasswordResetCode(email, code) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanCode = (code || '').trim();
+  const user = db.prepare(`
+    SELECT id, reset_code, reset_code_expires 
+    FROM users 
+    WHERE (LOWER(email) = ? OR LOWER(recovery_email) = ?) AND reset_code = ?
+  `).get(cleanEmail, cleanEmail, cleanCode);
+
+  if (!user) return null;
+  if (!user.reset_code_expires || new Date(user.reset_code_expires) < new Date()) {
+    return { expired: true };
+  }
+  return user;
+}
+
+export function resetPasswordWithCode(email, code, newPassword) {
+  const verification = verifyPasswordResetCode(email, code);
+  if (!verification || verification.expired) return false;
+
+  const newHash = hashPassword(newPassword);
+  const stmt = db.prepare(`
+    UPDATE users 
+    SET password_hash = ?, reset_code = NULL, reset_code_expires = NULL 
+    WHERE id = ?
+  `);
+  const res = stmt.run(newHash, verification.id);
+  return res.changes > 0;
 }
 
 // ─── Conteo de Aliases Activos (Límites: 5 invitado / 10 usuario) ─────────────
@@ -172,11 +237,39 @@ export function getAliasesForSessionOrUser(sessionId, userId = null) {
   `).all(sessionId);
 }
 
-// Vincular aliases anónimos de la sesión actual al usuario tras iniciar sesión
-export function claimSessionAliasesForUser(sessionId, userId) {
-  return db.prepare(`
-    UPDATE aliases SET user_id = ? WHERE session_id = ? AND user_id IS NULL AND status = 'active'
-  `).run(userId, sessionId);
+// Transferencia inteligente de aliases con control de límite estricto (máximo 10)
+export function claimSessionAliasesForUser(sessionId, userId, forceDiscardGuest = false) {
+  const userCount = countActiveAliases(null, userId);
+  const guestAliases = db.prepare(`
+    SELECT id, email FROM aliases 
+    WHERE session_id = ? AND user_id IS NULL AND status = 'active'
+    ORDER BY id ASC
+  `).all(sessionId);
+
+  if (guestAliases.length === 0) return { transferred: 0, discarded: 0 };
+
+  if (forceDiscardGuest || userCount >= 10) {
+    // Si la cuenta ya tiene 10 o el usuario aceptó descartar invitados
+    db.prepare(`
+      UPDATE aliases SET status = 'deleted', deleted_at = datetime('now')
+      WHERE session_id = ? AND user_id IS NULL AND status = 'active'
+    `).run(sessionId);
+    return { transferred: 0, discarded: guestAliases.length };
+  }
+
+  // Si caben todos o solo algunos hasta llegar a 10
+  const spaceAvailable = Math.max(0, 10 - userCount);
+  const toTransfer = guestAliases.slice(0, spaceAvailable);
+  const toDiscard = guestAliases.slice(spaceAvailable);
+
+  for (const a of toTransfer) {
+    db.prepare(`UPDATE aliases SET user_id = ? WHERE id = ?`).run(userId, a.id);
+  }
+  for (const a of toDiscard) {
+    db.prepare(`UPDATE aliases SET status = 'deleted', deleted_at = datetime('now') WHERE id = ?`).run(a.id);
+  }
+
+  return { transferred: toTransfer.length, discarded: toDiscard.length };
 }
 
 export function deleteAlias(email, sessionId, userId = null) {

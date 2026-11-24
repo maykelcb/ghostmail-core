@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>GhostMail Core</title>
   <link rel="icon" type="image/jpeg" href="assets/logo.jpg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,17 +17,14 @@
 <header class="header">
   <div class="header-container">
     <div class="logo-block">
-      <!-- Logo dinámico que hereda el gradiente del acento seleccionado -->
+      <!-- Logo dinámico: los ojos siempre son oscuros para no perderse en modo claro -->
       <div class="logo-icon">
         <svg class="ghost-mascot-svg" viewBox="0 0 100 100">
-          <!-- Cabeza redondeada del fantasma -->
           <path d="M50 15 C32 15 24 28 24 44 C24 50 22 55 18 58 C15 60 14 64 16 67 C19 72 26 73 31 69 L50 54 L69 69 C74 73 81 72 84 67 C86 64 85 60 82 58 C78 55 76 50 76 44 C76 28 68 15 50 15 Z" fill="#ffffff" />
-          <!-- Ojos ovalados oscuros -->
           <ellipse cx="42" cy="38" rx="4.5" ry="6.5" class="ghost-eye" />
           <ellipse cx="58" cy="38" rx="4.5" ry="6.5" class="ghost-eye" />
-          <!-- Sobre / Solapa frontal en V -->
           <path d="M26 64 L50 81 L74 64 L50 48 Z" fill="#ffffff" />
-          <path d="M28 68 L50 85 L72 68 L50 78 Z" fill="rgba(0,0,0,0.12)" />
+          <path d="M28 68 L50 85 L72 68 L50 78 Z" fill="rgba(0,0,0,0.14)" />
         </svg>
       </div>
       <div class="logo-text-group">
@@ -65,21 +62,16 @@
         </div>
       </div>
 
-      <!-- Sonido Interactivo con Chime Web Audio -->
+      <!-- Sonido Interactivo con Doble Chime -->
       <button class="btn-icon" id="audioToggle" title="Probar y alternar sonido">
         <i class="fa-solid fa-volume-high" id="audioIcon"></i>
       </button>
 
-      <!-- Botón de Usuario / Login -->
+      <!-- Botón de Usuario / Login (optimizado para móviles) -->
       <button class="btn-header-auth" id="authBtn">
         <i class="fa-regular fa-circle-user"></i>
         <span id="authBtnText" data-i18n="login">Ingresar</span>
       </button>
-
-      <!-- GitHub -->
-      <a href="https://github.com/maykelcb/ghostmail-core" target="_blank" class="btn-icon" title="GitHub">
-        <i class="fa-brands fa-github"></i>
-      </a>
     </div>
   </div>
 </header>
@@ -97,7 +89,6 @@
       <span class="alias-count-badge" id="aliasCountBadge">0/5</span>
     </div>
 
-    <!-- Botón Crear Nuevo inmediatamente arriba -->
     <button class="btn-create-new" id="btnCreateNew">
       <i class="fa-solid fa-plus"></i>
       <span data-i18n="create_new">Crear nuevo correo</span>
@@ -174,7 +165,7 @@
         </div>
       </div>
 
-      <!-- HISTORIAL: Ubicado DIRECTAMENTE DEBAJO de todos los correos creados -->
+      <!-- HISTORIAL DE MENSAJES: Ubicado DIRECTAMENTE DEBAJO de los correos -->
       <div class="inbox-section">
         <div class="inbox-header">
           <div class="inbox-title">
@@ -196,6 +187,12 @@
 
   </main>
 </div>
+
+<!-- ══════════════ BOTÓN FLOTANTE GITHUB (Abajo a la derecha) ══════════════ -->
+<a href="https://github.com/maykelcb/ghostmail-core" target="_blank" class="github-floating-corner" title="Ver código en GitHub">
+  <i class="fa-brands fa-github"></i>
+  <span>GitHub</span>
+</a>
 
 <!-- ══════════════ MODAL: CREAR ALIAS ══════════════ -->
 <div class="modal-overlay" id="createModal">
@@ -237,14 +234,8 @@
       </label>
     </div>
 
-    <!-- Contenedor Cloudflare Turnstile: Solo se muestra la primera vez -->
-    <div id="turnstileCreateWrapper" class="turnstile-wrapper">
-      <div class="turnstile-hint">
-        <i class="fa-solid fa-shield-halved"></i>
-        <span data-i18n="verify_once_hint">Verificación Cloudflare requerida para el primer correo:</span>
-      </div>
-      <div id="turnstileCreateContainer" class="turnstile-container"></div>
-    </div>
+    <!-- Contenedor Cloudflare Turnstile limpio y directo -->
+    <div id="turnstileCreateContainer" class="turnstile-container-clean"></div>
 
     <button class="btn-generate-modal" id="btnGenerateModal">
       <i class="fa-solid fa-bolt"></i>
@@ -253,67 +244,68 @@
   </div>
 </div>
 
-<!-- ══════════════ MODAL: AUTENTICACIÓN (LOGIN / REGISTRO COMPLETO) ══════════════ -->
+<!-- ══════════════ MODAL: AUTENTICACIÓN (LOGIN / REGISTRO / OLVIDÉ CONTRASEÑA) ══════════════ -->
 <div class="modal-overlay" id="authModal">
   <div class="modal-box auth-modal-box">
     <button class="modal-close" id="authModalClose"><i class="fa-solid fa-xmark"></i></button>
 
-    <div class="auth-tabs">
+    <div class="auth-tabs" id="authTabsNav">
       <button class="auth-tab-btn active" id="tabLoginBtn" data-i18n="tab_login">Iniciar Sesión</button>
       <button class="auth-tab-btn" id="tabRegisterBtn" data-i18n="tab_register">Registrarse</button>
     </div>
 
-    <div class="auth-perk-badge">
-      <i class="fa-solid fa-shield-halved"></i>
-      <span data-i18n="auth_perk">Accede a 10 correos simultáneos y guarda tu historial</span>
-    </div>
-
-    <!-- FORMULARIO DE LOGIN -->
+    <!-- FORMULARIO 1: INICIAR SESIÓN CON CORREO -->
     <form id="loginForm" class="auth-form" onsubmit="return false;">
       <div class="input-group">
-        <label for="loginUsername" data-i18n="username">Usuario</label>
+        <label for="loginEmail" data-i18n="email_label">Correo electrónico</label>
         <div class="input-wrapper">
-          <i class="fa-regular fa-user"></i>
-          <input type="text" id="loginUsername" required autocomplete="username" placeholder="ej. maykel123" />
+          <i class="fa-regular fa-envelope"></i>
+          <input type="email" id="loginEmail" required autocomplete="email" placeholder="ej. usuario@gmail.com" />
         </div>
       </div>
 
       <div class="input-group">
-        <label for="loginPassword" data-i18n="password">Contraseña</label>
+        <div class="label-with-link">
+          <label for="loginPassword" data-i18n="password">Contraseña</label>
+          <a href="#" class="auth-inline-link" id="btnGoToForgotPassword" data-i18n="forgot_password">¿Olvidaste tu contraseña?</a>
+        </div>
         <div class="input-wrapper">
           <i class="fa-solid fa-lock"></i>
           <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••" />
         </div>
       </div>
 
+      <!-- Texto ubicado justo encima del botón de ingresar -->
+      <p class="auth-perk-text" data-i18n="auth_perk">Accede a 10 correos simultáneos y guarda tu historial</p>
+
       <button type="submit" class="btn-auth-submit" id="loginSubmitBtn">
         <span data-i18n="login">Ingresar</span>
       </button>
     </form>
 
-    <!-- FORMULARIO DE REGISTRO COMPLETO -->
+    <!-- FORMULARIO 2: REGISTRO CON DATOS COMPLETOS -->
     <form id="registerForm" class="auth-form" style="display:none;" onsubmit="return false;">
       <div class="input-group">
         <label for="regName" data-i18n="full_name">Nombre completo</label>
         <div class="input-wrapper">
           <i class="fa-regular fa-id-card"></i>
-          <input type="text" id="regName" required placeholder="ej. Maykel Bernaola" />
+          <input type="text" id="regName" required placeholder="ej. Maykel Bernaola" pattern="^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]{2,50}$" title="Solo letras y espacios" />
         </div>
       </div>
 
       <div class="input-group">
-        <label for="regRecovery" data-i18n="recovery_email">Correo de recuperación personal</label>
+        <label for="regEmail" data-i18n="official_email">Correo oficial verídico</label>
         <div class="input-wrapper">
           <i class="fa-regular fa-envelope"></i>
-          <input type="email" id="regRecovery" required placeholder="ej. micorreo@gmail.com" />
+          <input type="email" id="regEmail" required placeholder="ej. micorreo@gmail.com" />
         </div>
       </div>
 
       <div class="input-group">
-        <label for="regUsername" data-i18n="username">Usuario</label>
+        <label for="regUsername" data-i18n="username">Usuario (inicia con letra)</label>
         <div class="input-wrapper">
           <i class="fa-regular fa-user"></i>
-          <input type="text" id="regUsername" required placeholder="ej. maykel123" />
+          <input type="text" id="regUsername" required placeholder="ej. maykel1234" pattern="^[a-zA-Z][a-zA-Z0-9_]{2,19}$" title="Debe empezar con letra y contener entre 3 y 20 caracteres alfanuméricos" />
         </div>
       </div>
 
@@ -322,7 +314,7 @@
           <label for="regPassword" data-i18n="password">Contraseña</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-lock"></i>
-            <input type="password" id="regPassword" required placeholder="••••••••" />
+            <input type="password" id="regPassword" required placeholder="••••••••" minlength="4" />
           </div>
         </div>
 
@@ -330,31 +322,108 @@
           <label for="regConfirmPassword" data-i18n="confirm_password">Confirmar</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-shield-heart"></i>
-            <input type="password" id="regConfirmPassword" required placeholder="••••••••" />
+            <input type="password" id="regConfirmPassword" required placeholder="••••••••" minlength="4" />
           </div>
         </div>
       </div>
 
-      <!-- Cloudflare Turnstile Widget para registro -->
-      <div class="turnstile-wrapper">
-        <div class="turnstile-hint">
-          <i class="fa-solid fa-shield-halved"></i>
-          <span data-i18n="cf_verification">Verificación antibot de Cloudflare:</span>
-        </div>
-        <div id="turnstileAuthContainer" class="turnstile-container"></div>
-      </div>
+      <!-- Cloudflare Turnstile directo sin recuadro exterior -->
+      <div id="turnstileAuthContainer" class="turnstile-container-clean"></div>
+
+      <!-- Texto ubicado justo encima del botón de registrarse -->
+      <p class="auth-perk-text" data-i18n="auth_perk">Accede a 10 correos simultáneos y guarda tu historial</p>
 
       <button type="submit" class="btn-auth-submit" id="regSubmitBtn">
         <span data-i18n="create_account">Crear cuenta</span>
       </button>
     </form>
+
+    <!-- FORMULARIO 3: OLVIDÉ MI CONTRASEÑA (Paso 1: Solicitar Código) -->
+    <form id="forgotFormStep1" class="auth-form" style="display:none;" onsubmit="return false;">
+      <div class="auth-form-header">
+        <h3 class="auth-sub-title" data-i18n="recovery_title">Recuperar Cuenta</h3>
+        <p class="auth-sub-desc" data-i18n="recovery_desc">Ingresa tu correo oficial registrado para enviarte un código de verificación de 6 dígitos.</p>
+      </div>
+
+      <div class="input-group">
+        <label for="forgotEmail" data-i18n="email_label">Correo electrónico</label>
+        <div class="input-wrapper">
+          <i class="fa-regular fa-envelope"></i>
+          <input type="email" id="forgotEmail" required placeholder="ej. usuario@gmail.com" />
+        </div>
+      </div>
+
+      <button type="submit" class="btn-auth-submit" id="btnSendResetCode">
+        <span data-i18n="send_code">Enviar código</span>
+      </button>
+
+      <div class="auth-back-row">
+        <a href="#" class="auth-inline-link" id="btnBackToLoginFromForgot">← <span data-i18n="back_to_login">Volver a iniciar sesión</span></a>
+      </div>
+    </form>
+
+    <!-- FORMULARIO 4: RESTABLECER CONTRASEÑA (Paso 2: Código + Nueva Contraseña) -->
+    <form id="forgotFormStep2" class="auth-form" style="display:none;" onsubmit="return false;">
+      <div class="auth-form-header">
+        <h3 class="auth-sub-title" data-i18n="enter_code_title">Ingresa el código</h3>
+        <p class="auth-sub-desc" data-i18n="enter_code_desc">Hemos enviado un código a tu correo. Ingrésalo junto con tu nueva contraseña.</p>
+      </div>
+
+      <div class="input-group">
+        <label for="resetOtpCode" data-i18n="otp_code_label">Código de 6 dígitos</label>
+        <div class="input-wrapper">
+          <i class="fa-solid fa-key"></i>
+          <input type="text" id="resetOtpCode" required maxlength="6" placeholder="ej. 123456" style="letter-spacing: 4px; font-family: monospace; font-size: 16px;" />
+        </div>
+      </div>
+
+      <div class="input-row-grid">
+        <div class="input-group">
+          <label for="resetNewPassword" data-i18n="new_password">Nueva contraseña</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-lock"></i>
+            <input type="password" id="resetNewPassword" required minlength="4" placeholder="••••••••" />
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="resetConfirmPassword" data-i18n="confirm_password">Confirmar</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-shield-heart"></i>
+            <input type="password" id="resetConfirmPassword" required minlength="4" placeholder="••••••••" />
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-auth-submit" id="btnSubmitNewPassword">
+        <span data-i18n="change_password">Restablecer contraseña</span>
+      </button>
+
+      <div class="auth-back-row">
+        <a href="#" class="auth-inline-link" id="btnBackToStep1">← <span data-i18n="change_email">Cambiar correo</span></a>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+<!-- ══════════════ MODAL: ADVERTENCIA DE MIGRACIÓN DE LÍMITE (PUNTO 6) ══════════════ -->
+<div class="modal-overlay" id="conflictModal">
+  <div class="modal-box modal-box-sm">
+    <div class="confirm-icon warning"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <h2 class="modal-title" data-i18n="conflict_title">Límite de correos</h2>
+    <p class="modal-sub" id="conflictModalDesc">Tu cuenta ya tiene correos activos. Si continúas, los correos de invitado se descartarán para no superar el límite de 10.</p>
+    <div class="confirm-actions">
+      <button class="btn-cancel" id="conflictCancel" data-i18n="cancel">Cancelar</button>
+      <button class="btn-danger-confirm" id="conflictProceed" data-i18n="proceed_login">Continuar e iniciar sesión</button>
+    </div>
   </div>
 </div>
 
 <!-- ══════════════ MODAL: CONFIRMAR ELIMINAR ══════════════ -->
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-box modal-box-sm">
-    <div class="confirm-icon danger"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <div class="confirm-icon danger"><i class="fa-solid fa-trash"></i></div>
     <h2 class="modal-title" id="confirmTitle" data-i18n="confirm_title">¿Eliminar?</h2>
     <p class="modal-sub" id="confirmDesc" data-i18n="confirm_desc">Esta acción no se puede deshacer.</p>
     <div class="confirm-actions">

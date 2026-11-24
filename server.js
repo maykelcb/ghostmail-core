@@ -9,6 +9,7 @@ import cookieParser from 'cookie-parser';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import nodemailer from 'nodemailer';
 
 import { generateAlias } from './aliasGenerator.js';
 import { ImapWorkerPool } from './imapWorker.js';
@@ -17,12 +18,12 @@ import {
   countActiveAliases, claimSessionAliasesForUser,
   deleteAlias, saveMessage, getMessagesByAlias,
   getMessageFull, deleteMessage,
-  createUser, getUserByUsername, getUserById, verifyPassword
+  createUser, getUserByUsernameOrEmail, getUserByEmail, getUserById, verifyPassword,
+  setPasswordResetCode, verifyPasswordResetCode, resetPasswordWithCode
 } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
-// Si no hay clave Turnstile en .env, usamos la clave pública de prueba de Cloudflare (siempre pasa)
 const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
@@ -36,6 +37,47 @@ try {
 if (!accounts.length) {
   console.error('[CONFIG] No hay cuentas configuradas en GMAIL_ACCOUNTS');
   process.exit(1);
+}
+
+// ─── Mailer para Recuperación de Contraseña ──────────────────────────────────
+let mailer = null;
+if (accounts.length > 0) {
+  mailer = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: accounts[0].user,
+      pass: accounts[0].pass || accounts[0].password
+    }
+  });
+}
+
+async function sendPasswordResetEmail(toEmail, code) {
+  if (!mailer) {
+    console.log(`[MAILER MOCK] Código de recuperación para ${toEmail}: ${code}`);
+    return true;
+  }
+  try {
+    await mailer.sendMail({
+      from: `"GhostMail Security" <${accounts[0].user}>`,
+      to: toEmail,
+      subject: `Código de recuperación: ${code} - GhostMail Core`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; background: #111b21; color: #e9edef; border-radius: 12px; border: 1px solid #222d34;">
+          <h2 style="color: #00a884; margin-top: 0;">GhostMail Core</h2>
+          <p style="font-size: 15px; color: #8696a0;">Has solicitado restablecer tu contraseña. Usa el siguiente código de 6 dígitos:</p>
+          <div style="background: #202c33; border: 2px dashed #00a884; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0;">
+            <span style="font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #ffffff;">${code}</span>
+          </div>
+          <p style="font-size: 13px; color: #667781;">Este código vencerá en 15 minutos. Si tú no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+        </div>
+      `
+    });
+    return true;
+  } catch (err) {
+    console.error('[Mailer] Error al enviar correo de recuperación:', err.message);
+    // En desarrollo, no bloqueamos la experiencia
+    return true;
+  }
 }
 
 // ─── Express + Socket.io ─────────────────────────────────────────────────────
@@ -72,9 +114,7 @@ app.use((req, res, next) => {
     req.user = null;
   }
 
-  // Comprobar si ya fue verificado por Cloudflare en esta sesión
   req.isTurnstileVerified = req.signedCookies?.gm_cf_verified === '1' || !!req.user;
-
   next();
 });
 
@@ -82,7 +122,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Helper Cloudflare Turnstile ─────────────────────────────────────────────
 async function verifyTurnstile(token, ip) {
-  // Clave de prueba de Cloudflare o sin secreto configurado
   if (!TURNSTILE_SECRET_KEY || TURNSTILE_SECRET_KEY.startsWith('1x00000000000000000000')) {
     return true;
   }
@@ -171,18 +210,31 @@ app.get('/api/auth/me', (req, res) => {
   });
 });
 
+// Registro con validaciones estrictas de seguridad
 app.post('/api/auth/register', async (req, res) => {
-  const { username, name, recoveryEmail, password, confirmPassword, turnstileToken } = req.body;
+  const { name, email, username, password, confirmPassword, turnstileToken } = req.body;
 
-  if (!username || username.trim().length < 3) {
-    return res.status(400).json({ error: 'El nombre de usuario debe tener al menos 3 caracteres.' });
+  // 1. Validación de Nombre Completo (solo letras y espacios, sin números ni símbolos)
+  const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]{2,50}$/;
+  if (!name || !nameRegex.test(name.trim())) {
+    return res.status(400).json({ error: 'El nombre completo solo debe contener letras y espacios (sin números ni símbolos).' });
   }
-  if (!name || name.trim().length < 2) {
-    return res.status(400).json({ error: 'Por favor ingresa tu nombre completo.' });
+
+  // 2. Validación de Correo Oficial
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!email || !emailRegex.test(email.trim())) {
+    return res.status(400).json({ error: 'Por favor ingresa un correo electrónico verídico y válido.' });
   }
-  if (!recoveryEmail || !recoveryEmail.includes('@') || !recoveryEmail.includes('.')) {
-    return res.status(400).json({ error: 'Por favor ingresa un correo de recuperación válido.' });
+
+  // 3. Validación de Usuario (debe empezar con letra, letras/números/guion bajo, NO solo números)
+  const usernameRegex = /^[a-zA-Z][a-zA-Z0-9_]{2,19}$/;
+  if (!username || !usernameRegex.test(username.trim())) {
+    return res.status(400).json({
+      error: 'El usuario debe comenzar con una letra y tener entre 3 y 20 caracteres (solo letras, números y _). No puede ser solo números ni contener símbolos extraños.'
+    });
   }
+
+  // 4. Validación de Contraseña
   if (!password || password.length < 4) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres.' });
   }
@@ -190,19 +242,24 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'Las contraseñas no coinciden.' });
   }
 
-  // Verificación Cloudflare obligatoria para registro
+  // 5. Cloudflare Turnstile
   const isHuman = await verifyTurnstile(turnstileToken, req.ip);
   if (!isHuman) {
     return res.status(403).json({ error: 'Fallo en la verificación antibot de Cloudflare. Por favor completa el captcha.' });
   }
 
-  const existing = getUserByUsername(username);
-  if (existing) {
-    return res.status(409).json({ error: 'Este nombre de usuario ya está registrado. Elige otro.' });
+  // Comprobar si ya existe usuario o correo
+  const existingUser = getUserByUsernameOrEmail(username);
+  if (existingUser) {
+    return res.status(409).json({ error: 'El nombre de usuario ya está en uso. Elige otro.' });
+  }
+  const existingEmail = getUserByEmail(email);
+  if (existingEmail) {
+    return res.status(409).json({ error: 'Este correo electrónico ya está registrado. Intenta iniciar sesión o recuperar contraseña.' });
   }
 
   try {
-    const newUser = createUser({ username, name, recoveryEmail, password });
+    const newUser = createUser({ email, username, name, password });
     claimSessionAliasesForUser(req.sessionId, newUser.id);
 
     res.cookie('gm_user_id', String(newUser.id), {
@@ -220,7 +277,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     res.json({
       ok: true,
-      user: { id: newUser.id, username: newUser.username, name: newUser.name, recoveryEmail: newUser.recoveryEmail },
+      user: { id: newUser.id, email: newUser.email, username: newUser.username, name: newUser.name },
       maxLimit: 10
     });
   } catch (err) {
@@ -228,18 +285,36 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// Login por Correo Electrónico con control estricto de límite (Punto 6)
 app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Ingresa tu usuario y contraseña.' });
+  const { email, password, forceDiscardGuest } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Ingresa tu correo y contraseña.' });
   }
 
-  const user = getUserByUsername(username);
+  const user = getUserByUsernameOrEmail(email);
   if (!user || !verifyPassword(password, user.password_hash)) {
-    return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
+    return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
   }
 
-  claimSessionAliasesForUser(req.sessionId, user.id);
+  // Control de migración de límite de 10 correos
+  const userCount = countActiveAliases(null, user.id);
+  const sessionCount = countActiveAliases(req.sessionId, null);
+
+  // Si tiene correos de invitado y al unirlos superaría 10
+  if (sessionCount > 0 && (userCount + sessionCount > 10) && !forceDiscardGuest) {
+    return res.status(409).json({
+      conflict: true,
+      userCount,
+      sessionCount,
+      message: userCount >= 10
+        ? `Tu cuenta ya tiene el límite máximo de ${userCount} correos activos. Si continúas, los ${sessionCount} correo(s) temporales creados en esta sesión se perderán y solo verás los de tu cuenta.`
+        : `Al juntar los ${sessionCount} correos de esta sesión con los ${userCount} de tu cuenta se superaría el límite de 10. Si continúas, solo se conservarán los que quepan hasta llegar a 10.`
+    });
+  }
+
+  // Migrar correos respetando el tope de 10
+  claimSessionAliasesForUser(req.sessionId, user.id, forceDiscardGuest === true);
 
   res.cookie('gm_user_id', String(user.id), {
     signed: true,
@@ -256,9 +331,54 @@ app.post('/api/auth/login', async (req, res) => {
 
   res.json({
     ok: true,
-    user: { id: user.id, username: user.username, name: user.name, recoveryEmail: user.recovery_email },
+    user: { id: user.id, email: user.email, username: user.username, name: user.name },
     maxLimit: 10
   });
+});
+
+// Olvidé mi contraseña: Enviar código OTP de 6 dígitos al correo oficial
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Ingresa tu correo electrónico registrado.' });
+
+  const user = getUserByEmail(email);
+  if (!user) {
+    return res.status(404).json({ error: 'No existe ninguna cuenta registrada con este correo electrónico.' });
+  }
+
+  // Generar código de 6 dígitos
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  setPasswordResetCode(user.email, code, 15);
+
+  // Enviar correo real con nodemailer
+  await sendPasswordResetEmail(user.email, code);
+
+  res.json({
+    ok: true,
+    message: `Se ha enviado un código de 6 dígitos a ${user.email}. Por favor revisa tu bandeja de entrada o spam.`
+  });
+});
+
+// Restablecer contraseña con código
+app.post('/api/auth/reset-password', (req, res) => {
+  const { email, code, newPassword, confirmNewPassword } = req.body;
+
+  if (!email || !code || !newPassword) {
+    return res.status(400).json({ error: 'Por favor completa todos los campos requeridos.' });
+  }
+  if (newPassword.length < 4) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 4 caracteres.' });
+  }
+  if (newPassword !== confirmNewPassword) {
+    return res.status(400).json({ error: 'Las nuevas contraseñas no coinciden.' });
+  }
+
+  const ok = resetPasswordWithCode(email, code, newPassword);
+  if (!ok) {
+    return res.status(400).json({ error: 'El código de verificación es inválido o ha caducado.' });
+  }
+
+  res.json({ ok: true, message: '¡Contraseña restablecida con éxito! Ya puedes iniciar sesión con tu nueva contraseña.' });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -286,14 +406,13 @@ app.post('/api/aliases', async (req, res) => {
     });
   }
 
-  // Cloudflare Turnstile: solo se exige la primera vez si no está verificado en la sesión
+  // Cloudflare solo se exige para el primer correo si no está verificado
   const needsVerification = !req.isTurnstileVerified && currentCount === 0;
   if (needsVerification) {
     const isHuman = await verifyTurnstile(turnstileToken, req.ip);
     if (!isHuman) {
       return res.status(403).json({ error: 'Por favor completa la verificación de Cloudflare para continuar.' });
     }
-    // Marcar verificado en la cookie de sesión
     res.cookie('gm_cf_verified', '1', {
       signed: true,
       httpOnly: true,
