@@ -18,10 +18,12 @@ db.pragma('foreign_keys = ON');
 // ─── Esquema ────────────────────────────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
-    password_hash TEXT    NOT NULL,
-    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    username       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    name           TEXT    DEFAULT NULL,
+    recovery_email TEXT    DEFAULT NULL,
+    password_hash  TEXT    NOT NULL,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS aliases (
@@ -58,16 +60,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_alias  ON messages(alias_email);
 `);
 
-// Migración segura si la tabla aliases ya existía sin columna user_id
+// Migraciones seguras para columnas agregadas dinámicamente
 try {
-  const tableInfo = db.prepare(`PRAGMA table_info(aliases)`).all();
-  const hasUserId = tableInfo.some(col => col.name === 'user_id');
-  if (!hasUserId) {
-    db.exec(`ALTER TABLE aliases ADD COLUMN user_id INTEGER DEFAULT NULL;`);
+  const aliasCols = db.prepare(`PRAGMA table_info(aliases)`).all();
+  if (!aliasCols.some(col => col.name === 'user_id')) {
+    db.exec(`ALTER TABLE aliases ADD COLUMN user_id INTEGER DEFAULT NULL REFERENCES users(id) ON DELETE SET NULL;`);
   }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_aliases_user ON aliases(user_id);`);
+
+  const userCols = db.prepare(`PRAGMA table_info(users)`).all();
+  if (!userCols.some(col => col.name === 'name')) {
+    db.exec(`ALTER TABLE users ADD COLUMN name TEXT DEFAULT NULL;`);
+  }
+  if (!userCols.some(col => col.name === 'recovery_email')) {
+    db.exec(`ALTER TABLE users ADD COLUMN recovery_email TEXT DEFAULT NULL;`);
+  }
 } catch (e) {
-  // Ignorar si ya existe
+  // Ignorar errores de columnas existentes
 }
 
 // ─── Autenticación (Crypto Nativo) ──────────────────────────────────────────
@@ -85,12 +94,18 @@ export function verifyPassword(password, storedHash) {
   return crypto.timingSafeEqual(keyBuffer, derivedKey);
 }
 
-export function createUser(username, password) {
+export function createUser({ username, name, recoveryEmail, password }) {
   const cleanUsername = username.trim().toLowerCase();
+  const cleanName = (name || '').trim();
+  const cleanRecovery = (recoveryEmail || '').trim().toLowerCase();
   const passwordHash = hashPassword(password);
-  const stmt = db.prepare(`INSERT INTO users (username, password_hash) VALUES (?, ?)`);
-  const result = stmt.run(cleanUsername, passwordHash);
-  return { id: result.lastInsertRowid, username: cleanUsername };
+
+  const stmt = db.prepare(`
+    INSERT INTO users (username, name, recovery_email, password_hash)
+    VALUES (?, ?, ?, ?)
+  `);
+  const result = stmt.run(cleanUsername, cleanName, cleanRecovery, passwordHash);
+  return { id: result.lastInsertRowid, username: cleanUsername, name: cleanName, recoveryEmail: cleanRecovery };
 }
 
 export function getUserByUsername(username) {
@@ -99,7 +114,7 @@ export function getUserByUsername(username) {
 }
 
 export function getUserById(id) {
-  return db.prepare(`SELECT id, username, created_at FROM users WHERE id = ?`).get(id);
+  return db.prepare(`SELECT id, username, name, recovery_email, created_at FROM users WHERE id = ?`).get(id);
 }
 
 // ─── Conteo de Aliases Activos (Límites: 5 invitado / 10 usuario) ─────────────
@@ -145,7 +160,7 @@ export function getAliasesForSessionOrUser(sessionId, userId = null) {
         (SELECT COUNT(*) FROM messages m WHERE LOWER(m.alias_email) = LOWER(aliases.email) AND m.deleted_at IS NULL) as message_count
       FROM aliases
       WHERE user_id = ? AND status = 'active'
-      ORDER BY id DESC
+      ORDER BY id ASC
     `).all(userId);
   }
   return db.prepare(`
@@ -153,7 +168,7 @@ export function getAliasesForSessionOrUser(sessionId, userId = null) {
       (SELECT COUNT(*) FROM messages m WHERE LOWER(m.alias_email) = LOWER(aliases.email) AND m.deleted_at IS NULL) as message_count
     FROM aliases
     WHERE session_id = ? AND status = 'active' AND user_id IS NULL
-    ORDER BY id DESC
+    ORDER BY id ASC
   `).all(sessionId);
 }
 

@@ -22,7 +22,9 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
-const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '';
+// Si no hay clave Turnstile en .env, usamos la clave pública de prueba de Cloudflare (siempre pasa)
+const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
+const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
 // ─── Configuración de cuentas ────────────────────────────────────────────────
 let accounts = [];
@@ -70,6 +72,9 @@ app.use((req, res, next) => {
     req.user = null;
   }
 
+  // Comprobar si ya fue verificado por Cloudflare en esta sesión
+  req.isTurnstileVerified = req.signedCookies?.gm_cf_verified === '1' || !!req.user;
+
   next();
 });
 
@@ -77,7 +82,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Helper Cloudflare Turnstile ─────────────────────────────────────────────
 async function verifyTurnstile(token, ip) {
-  if (!TURNSTILE_SECRET_KEY) return true; // Si no hay clave configurada, no bloquea (modo dev)
+  // Clave de prueba de Cloudflare o sin secreto configurado
+  if (!TURNSTILE_SECRET_KEY || TURNSTILE_SECRET_KEY.startsWith('1x00000000000000000000')) {
+    return true;
+  }
   if (!token) return false;
 
   try {
@@ -148,61 +156,82 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ─── API: Autenticación Rápida ────────────────────────────────────────────────
+// ─── API: Autenticación ──────────────────────────────────────────────────────
 app.get('/api/auth/me', (req, res) => {
   const maxLimit = req.user ? 10 : 5;
   const activeCount = countActiveAliases(req.sessionId, req.user?.id);
+  const alreadyVerified = req.isTurnstileVerified || activeCount > 0;
+
   res.json({
     user: req.user,
     maxLimit,
     activeCount,
-    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || ''
+    turnstileSiteKey: TURNSTILE_SITE_KEY,
+    alreadyVerified
   });
 });
 
 app.post('/api/auth/register', async (req, res) => {
-  const { username, password, turnstileToken } = req.body;
-  if (!username || !password || username.trim().length < 3 || password.length < 4) {
-    return res.status(400).json({ error: 'El usuario debe tener al menos 3 caracteres y la contraseña al menos 4.' });
+  const { username, name, recoveryEmail, password, confirmPassword, turnstileToken } = req.body;
+
+  if (!username || username.trim().length < 3) {
+    return res.status(400).json({ error: 'El nombre de usuario debe tener al menos 3 caracteres.' });
+  }
+  if (!name || name.trim().length < 2) {
+    return res.status(400).json({ error: 'Por favor ingresa tu nombre completo.' });
+  }
+  if (!recoveryEmail || !recoveryEmail.includes('@') || !recoveryEmail.includes('.')) {
+    return res.status(400).json({ error: 'Por favor ingresa un correo de recuperación válido.' });
+  }
+  if (!password || password.length < 4) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres.' });
+  }
+  if (password !== confirmPassword) {
+    return res.status(400).json({ error: 'Las contraseñas no coinciden.' });
   }
 
+  // Verificación Cloudflare obligatoria para registro
   const isHuman = await verifyTurnstile(turnstileToken, req.ip);
   if (!isHuman) {
-    return res.status(403).json({ error: 'Fallo en la verificación antibot de Cloudflare.' });
+    return res.status(403).json({ error: 'Fallo en la verificación antibot de Cloudflare. Por favor completa el captcha.' });
   }
 
   const existing = getUserByUsername(username);
   if (existing) {
-    return res.status(409).json({ error: 'Este nombre de usuario ya está registrado.' });
+    return res.status(409).json({ error: 'Este nombre de usuario ya está registrado. Elige otro.' });
   }
 
   try {
-    const newUser = createUser(username, password);
-    // Vincular aliases que haya creado en esta sesión antes de registrarse
+    const newUser = createUser({ username, name, recoveryEmail, password });
     claimSessionAliasesForUser(req.sessionId, newUser.id);
 
     res.cookie('gm_user_id', String(newUser.id), {
       signed: true,
       httpOnly: true,
       sameSite: 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 días
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    });
+    res.cookie('gm_cf_verified', '1', {
+      signed: true,
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000
     });
 
-    res.json({ ok: true, user: { id: newUser.id, username: newUser.username }, maxLimit: 10 });
+    res.json({
+      ok: true,
+      user: { id: newUser.id, username: newUser.username, name: newUser.name, recoveryEmail: newUser.recoveryEmail },
+      maxLimit: 10
+    });
   } catch (err) {
     res.status(500).json({ error: 'Error al registrar usuario: ' + err.message });
   }
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const { username, password, turnstileToken } = req.body;
+  const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Ingresa tu usuario y contraseña.' });
-  }
-
-  const isHuman = await verifyTurnstile(turnstileToken, req.ip);
-  if (!isHuman) {
-    return res.status(403).json({ error: 'Fallo en la verificación antibot de Cloudflare.' });
   }
 
   const user = getUserByUsername(username);
@@ -210,7 +239,6 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
   }
 
-  // Vincular aliases de la sesión actual al usuario logueado
   claimSessionAliasesForUser(req.sessionId, user.id);
 
   res.cookie('gm_user_id', String(user.id), {
@@ -219,8 +247,18 @@ app.post('/api/auth/login', async (req, res) => {
     sameSite: 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000
   });
+  res.cookie('gm_cf_verified', '1', {
+    signed: true,
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60 * 1000
+  });
 
-  res.json({ ok: true, user: { id: user.id, username: user.username }, maxLimit: 10 });
+  res.json({
+    ok: true,
+    user: { id: user.id, username: user.username, name: user.name, recoveryEmail: user.recovery_email },
+    maxLimit: 10
+  });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -228,29 +266,39 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-// ─── API: Crear alias con límites (5 invitado / 10 usuario) ───────────────────
+// ─── API: Crear alias ─────────────────────────────────────────────────────────
 app.post('/api/aliases', async (req, res) => {
   const mode = req.body.mode || 'dots';
   const turnstileToken = req.body.turnstileToken;
 
-  const isHuman = await verifyTurnstile(turnstileToken, req.ip);
-  if (!isHuman) {
-    return res.status(403).json({ error: 'Fallo en la verificación antibot de Cloudflare.' });
-  }
-
-  // Comprobar límite de correos simultáneos
   const maxLimit = req.user ? 10 : 5;
   const currentCount = countActiveAliases(req.sessionId, req.user?.id);
 
   if (currentCount >= maxLimit) {
     const errorMsg = req.user
-      ? `Has alcanzado el límite máximo de ${maxLimit} correos simultáneos. Elimina alguno de tu historial para crear uno nuevo.`
-      : `Límite alcanzado (máximo 5 correos para invitados). Elimina uno de tu historial o inicia sesión para tener hasta 10 correos simultáneos.`;
+      ? `Has alcanzado el límite máximo de ${maxLimit} correos simultáneos. Elimina alguno de tu lista para crear uno nuevo.`
+      : `Límite alcanzado (máximo 5 correos para invitados). Elimina uno de tu lista o inicia sesión para tener hasta 10 correos simultáneos.`;
     return res.status(403).json({
       error: errorMsg,
       limitReached: true,
       maxLimit,
       isGuest: !req.user
+    });
+  }
+
+  // Cloudflare Turnstile: solo se exige la primera vez si no está verificado en la sesión
+  const needsVerification = !req.isTurnstileVerified && currentCount === 0;
+  if (needsVerification) {
+    const isHuman = await verifyTurnstile(turnstileToken, req.ip);
+    if (!isHuman) {
+      return res.status(403).json({ error: 'Por favor completa la verificación de Cloudflare para continuar.' });
+    }
+    // Marcar verificado en la cookie de sesión
+    res.cookie('gm_cf_verified', '1', {
+      signed: true,
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000
     });
   }
 
@@ -295,7 +343,8 @@ app.post('/api/aliases', async (req, res) => {
     mode,
     provider,
     currentCount: currentCount + 1,
-    maxLimit
+    maxLimit,
+    verified: true
   });
 });
 
